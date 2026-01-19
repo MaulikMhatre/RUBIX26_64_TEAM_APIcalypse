@@ -1,0 +1,52 @@
+
+@import "tailwindcss";
+
+:root {
+  --background: #000000; 
+  --sidebar-bg: #050505;
+  --card-bg: #0b0b0b;
+  --indigo-glow: rgba(99, 102, 241, 0.15);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card-bg);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  /* Ensuring the background is always deep obsidian */
+  background-color: var(--background) !important;
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Tactical Scrollbar Design */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Proper Margin Helper for the Dashboard Gutter */
+.main-content-gutter {
+  padding-left: 5rem; 
+  padding-right: 3rem;
+}
