@@ -26,7 +26,6 @@ from database import engine, get_db
 from database import engine, get_db
 import models
 from inventory_service import InventoryService # [NEW] Import Service
-from sqlalchemy import desc # For ordering logs
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -44,9 +43,7 @@ def seed_inventory():
         ("Saline Pack", "General", 100, 20),
         ("OR Prep Kit", "Surgery", 15, 3),
         ("Sterile Gowns", "Surgery", 200, 25),
-        ("PPE Kit", "General", 100, 15),
-        ("Sanitization Kit", "General", 50, 15), # [NEW]
-        ("Bed Linens", "General", 100, 20)      # [NEW]
+        ("PPE Kit", "General", 100, 15)
     ]
     for name, cat, qty, reorder in items:
         if not db.query(models.InventoryItem).filter_by(name=name).first():
@@ -144,7 +141,8 @@ class MedicalAgent:
 
     "### CONSTRAINTS:\n"
     " - Map ESI 1-2 -> ICU | ESI 3 -> ER | ESI 4-5 -> Wards.\n"
-    " - RETURN ONLY JSON: {'esi_level': int, 'location': str, 'clinical_justification': str}"
+    " - RETURN ONLY JSON: {'esi_level': int, 'bed_type': str, 'justification': str}"
+    " - bed_type MUST be one of: 'ICU', 'ER', 'Wards'"
 )
         
         user_input = f"Symptoms: {symptoms}. Vitals: {vitals}."
@@ -486,12 +484,6 @@ async def start_cleaning(bed_id: str, db: Session = Depends(get_db)):
     bed.status = "CLEANING"
     db.commit()
     
-    # [NEW] Inventory Usage for Cleaning
-    await InventoryService.process_usage(
-        db, manager, "Cleaning", 
-        {"patient_name": "Bed Turnover", "bed_id": bed.id, "condition": "Standard Cleaning"}
-    )
-
     await manager.broadcast({
         "type": "BED_UPDATE", 
         "bed_id": bed.id, 
@@ -672,36 +664,44 @@ async def release_surgery_room(bed_id: str, db: Session = Depends(get_db)):
     })
     return {"status": "released"}
 
+from sqlalchemy import or_ # Add this import at the top
+
 @app.post("/api/triage/assess")
 async def assess_patient(request: TriageRequest, db: Session = Depends(get_db)):
-    # 1. Ask Gemini for clinical decision (ESI Level & Target Unit)
-    # Gemini returns "ICU", "ER", or "Wards"
+    # 1. Ask Gemini for clinical decision
     decision = await ai_agent.analyze_patient(request.symptoms, request.vitals)
     
     level = decision.esi_level
     bed_type = decision.bed_type 
     
-    # 2. Gender Logic for Wards
-    # Requirements: 'Other' and 'Male' go to Male Ward ('M'). 'Female' goes to Female Ward ('F').
+    # 2. Gender Logic
     target_bed_gender = "M" if request.gender in ["Male", "Other"] else "F"
     
-    # 3. Critical System Check (Ventilator Requirement)
+    # 3. Critical System Check
     spo2 = request.vitals.get("spo2", 100)
     ventilator_needed = spo2 < 88 and level <= 2
     
     # 4. Find Available Bed with Database Locking
+    # Start with base filters
     query = db.query(models.BedModel).filter(
         models.BedModel.type == bed_type, 
         models.BedModel.is_occupied == False,
         models.BedModel.status == "AVAILABLE"
     )
 
-    # Apply Gender Constraint ONLY if the target is a Ward
-    # ICU and ER remain gender-neutral for emergency speed
+    # UPDATED GENDER LOGIC:
+    # If it's a Ward, look for the specific gender OR the "Any" catch-all from your seed
     if bed_type == "Wards":
-        query = query.filter(models.BedModel.gender == target_bed_gender)
+        query = query.filter(
+            or_(
+                models.BedModel.gender == target_bed_gender,
+                models.BedModel.gender == "Any"
+            )
+        )
+    
+    print(f"DEBUG: Searching {bed_type} for gender {target_bed_gender} or 'Any'")
 
-    # Use with_for_update to prevent race conditions during high-concurrency
+    # Use with_for_update to prevent race conditions
     bed = query.with_for_update(skip_locked=True).first()
 
     # 5. Create Patient Record
@@ -710,7 +710,7 @@ async def assess_patient(request: TriageRequest, db: Session = Depends(get_db)):
         id=new_patient_id,
         esi_level=level,
         acuity=bed_type,
-        gender=request.gender, # Audit trail
+        gender=request.gender,
         symptoms=request.symptoms,
         timestamp=datetime.utcnow(),
         patient_name=request.patient_name, 
@@ -743,35 +743,27 @@ async def assess_patient(request: TriageRequest, db: Session = Depends(get_db)):
         "is_critical": level <= 2
     })
 
-    # [NEW] Inventory Hook for Triage Admissions
+    # Inventory Hook
     if bed:
-        # Determine context based on the assigned bed type
         inv_context = bed.type if bed.type in ["ICU", "ER"] else "Wards"
-        
-        # Trigger inventory deduction shared logic
         await InventoryService.process_usage(
             db, manager, inv_context, 
             {
                 "patient_name": request.patient_name, 
                 "bed_id": bed.id, 
-                "condition": new_record.condition # Contains "ESI X: Justification"
+                "condition": new_record.condition
             }
         )
 
     return {
-        "patient_name": request.patient_name,  # Added
-        "acuity": bed_type,                    # Added (e.g., "ICU", "ER", "Wards")
         "patient_name": request.patient_name,
         "patient_age": request.patient_age,
-        "esi_level": level,
         "esi_level": level,
         "acuity": f"Priority {level}: {decision.acuity_label}",
         "assigned_bed": assigned_id,
         "ai_justification": decision.justification,
-        "recommended_actions": decision.recommended_actions,
-        "patient_age": request.patient_age
+        "recommended_actions": decision.recommended_actions
     }
-
 
 
 @app.get("/api/history/day/{target_date}")
@@ -818,68 +810,6 @@ def get_bed_info(bed_id: str, db: Session = Depends(get_db)):
 @app.get("/api/erp/inventory")
 def get_inventory(db: Session = Depends(get_db)):
     return db.query(models.InventoryItem).all()
-
-@app.get("/api/inventory/forecast")
-def get_inventory_forecast(db: Session = Depends(get_db)):
-    """
-    Predictive Engine: Calculates burn rate and exhaustion time.
-    """
-    # 1. Calculate Hospital Load Multiplier
-    total_beds = db.query(models.BedModel).count() or 1
-    occupied_beds = db.query(models.BedModel).filter(models.BedModel.is_occupied == True).count()
-    occupancy_rate = occupied_beds / total_beds
-    
-    # Dynamic Weighting: Global 1.2x overhead if hospital is busy (>80%)
-    load_multiplier = 1.2 if occupancy_rate > 0.8 else 1.0
-    
-    items = db.query(models.InventoryItem).all()
-    forecast_data = []
-    
-    now = datetime.utcnow()
-    six_hours_ago = now - timedelta(hours=6)
-    
-    for item in items:
-        # 2. Historical Windowing (Last 6 Hours)
-        logs = db.query(models.InventoryLog).filter(
-            models.InventoryLog.item_id == item.id,
-            models.InventoryLog.timestamp >= six_hours_ago
-        ).all()
-        
-        total_used = sum(log.quantity_used for log in logs)
-        
-        # 3. Consumption Rate Calculation (Units per Hour)
-        # Avoid division by zero, default to minimal usage to prevent infinite exhaustion time
-        raw_burn_rate = total_used / 6.0
-        if raw_burn_rate == 0: raw_burn_rate = 0.1 # Baseline trickle
-            
-        # Apply Logic: Dynamic Weighting
-        adjusted_burn_rate = raw_burn_rate * load_multiplier
-        
-        # 4. Exhaustion Prediction
-        hours_remaining = 999.0
-        if adjusted_burn_rate > 0:
-            hours_remaining = item.quantity / adjusted_burn_rate
-            
-        # 5. Smart Alert Thresholds
-        status = "Normal"
-        if hours_remaining < 3:
-            status = "Critical" # Stockout Imminent
-        elif hours_remaining < 12:
-            status = "Warning" # Draft Reorder
-            
-        forecast_data.append({
-            "id": item.id,
-            "name": item.name,
-            "category": item.category,
-            "quantity": item.quantity,
-            "reorder_level": item.reorder_level,
-            "burn_rate": round(adjusted_burn_rate, 2),
-            "hours_remaining": round(hours_remaining, 1),
-            "status": status,
-            "load_multiplier": load_multiplier if occupancy_rate > 0.8 else 1.0 # For debugging/UI transparency
-        })
-        
-    return forecast_data
 
 
 @app.get("/api/dashboard/stats")
@@ -1119,35 +1049,43 @@ def initialize_hospital_beds(db: Session):
         ("Surgery", "SURG", 10)
     ]
     
-    # 1. Seed Static Units
+    # 1. Seed Static Units (ICU, ER, Surgery)
     for unit, prefix, count in targets:
         for i in range(1, count + 1):
             bid = f"{prefix}-{i}"
             if not db.query(models.BedModel).filter(models.BedModel.id == bid).first():
-                db.add(models.BedModel(id=bid, type=unit, unit=unit, gender="Any", is_occupied=False, status="AVAILABLE"))
+                db.add(models.BedModel(
+                    id=bid, 
+                    type=unit, 
+                    gender="Any", 
+                    is_occupied=False, 
+                    status="AVAILABLE"
+                ))
 
     # 2. Seed 100 Ward Beds with Zone Distribution
+    # Note: 'unit' argument removed to prevent TypeError
     if db.query(models.BedModel).filter(models.BedModel.type == "Wards").count() == 0:
-        # Medical Ward (40: 20M/20F)
+        # Medical Ward (40: 20M / 20F)
         for i in range(1, 21):
-            db.add(models.BedModel(id=f"WARD-MED-M-{i}", type="Wards", unit="Medical Ward", gender="M"))
-            db.add(models.BedModel(id=f"WARD-MED-F-{i}", type="Wards", unit="Medical Ward", gender="F"))
+            db.add(models.BedModel(id=f"WARD-MED-M-{i}", type="Wards", gender="M", is_occupied=False, status="AVAILABLE"))
+            db.add(models.BedModel(id=f"WARD-MED-F-{i}", type="Wards", gender="F", is_occupied=False, status="AVAILABLE"))
         
-        # Specialty (30: 15 Ped / 15 Mat)
+        # Specialty (30: 15 Pediatric / 15 Maternity)
         for i in range(1, 16):
-            db.add(models.BedModel(id=f"WARD-PED-{i}", type="Wards", unit="Pediatric", gender="Any"))
-            db.add(models.BedModel(id=f"WARD-MAT-{i}", type="Wards", unit="Maternity", gender="F"))
+            db.add(models.BedModel(id=f"WARD-PED-{i}", type="Wards", gender="Any", is_occupied=False, status="AVAILABLE"))
+            db.add(models.BedModel(id=f"WARD-MAT-{i}", type="Wards", gender="F", is_occupied=False, status="AVAILABLE"))
             
         # Recovery & Security (30)
         for i in range(1, 11):
-            db.add(models.BedModel(id=f"WARD-HDU-{i}", type="Wards", unit="HDU", gender="Any"))
-            db.add(models.BedModel(id=f"WARD-DC-{i}", type="Wards", unit="Day Care", gender="Any"))
+            db.add(models.BedModel(id=f"WARD-HDU-{i}", type="Wards", gender="Any", is_occupied=False, status="AVAILABLE"))
+            db.add(models.BedModel(id=f"WARD-DC-{i}", type="Wards", gender="Any", is_occupied=False, status="AVAILABLE"))
         for i in range(1, 6):
-            db.add(models.BedModel(id=f"WARD-ISO-{i}", type="Wards", unit="Isolation", gender="Any"))
-            db.add(models.BedModel(id=f"WARD-SEMIP-{i}", type="Wards", unit="Semi-Private", gender="Any"))
+            db.add(models.BedModel(id=f"WARD-ISO-{i}", type="Wards", gender="Any", is_occupied=False, status="AVAILABLE"))
+            db.add(models.BedModel(id=f"WARD-SEMIP-{i}", type="Wards", gender="Any", is_occupied=False, status="AVAILABLE"))
     
     db.commit()
-
+    print("✅ System Infrastructure Initialized: 190 Beds Active.")
+    
 @app.on_event("startup")
 def seed_db():
     db = next(get_db())

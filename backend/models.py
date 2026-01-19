@@ -28,6 +28,7 @@ class BedModel(Base):
     expected_end_time = Column(DateTime, nullable=True)
     cleanup_start_time = Column(DateTime, nullable=True)
     next_surgery_start_time = Column(DateTime, nullable=True)
+    
 
     def get_color_code(self):
         if self.status == "AVAILABLE": return "#32CD32" # Green

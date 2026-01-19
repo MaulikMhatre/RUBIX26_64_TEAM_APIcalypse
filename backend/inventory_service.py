@@ -58,10 +58,6 @@ class InventoryService:
         if "infec" in condition.lower() or "isolation" in condition.lower():
             items_to_deduct.append(("PPE Kit", 1))
 
-        # [NEW] Cleaning Context
-        if context == "Cleaning":
-             items_to_deduct.extend([("Sanitization Kit", 1), ("Bed Linens", 1)])
-
         # 3. Process Executions
         alerts = []
         for item_name, qty in items_to_deduct:
