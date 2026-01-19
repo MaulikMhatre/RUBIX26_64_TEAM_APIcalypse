@@ -1,139 +1,229 @@
 "use client";
 
-import React from 'react';
-import { Activity, Truck, Package, Syringe, Box, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Package, AlertTriangle, Activity, Box, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface ResourceProps {
-  resources: {
-    Ventilators: { total: number; in_use: number };
-    Ambulances: { total: number; available: number };
-  };
+  resources?: any;
   isSimulating?: boolean;
 }
 
-const ResourceInventory: React.FC<ResourceProps> = ({ resources, isSimulating }) => {
-  const v = resources?.Ventilators || { total: 20, in_use: 0 };
-  const a = resources?.Ambulances || { total: 10, available: 0 };
+interface InventoryItem {
+  id: number;
+  name: string;
+  category: string;
+  quantity: number;
+  reorder_level: number;
+}
 
+const CircularProgress = ({ percentage, color }: { percentage: number, color: string }) => {
+  const radius = 24; // Increased size for impact
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percentage / 100) * circumference;
 
-  const ventInUse = isSimulating ? Math.min(v.in_use + 8, v.total) : v.in_use;
-  const ambAvailable = isSimulating ? Math.max(a.available - 4, 0) : a.available;
-
-  const ventUsage = v.total > 0 ? (ventInUse / v.total) * 100 : 0;
-  
   return (
-    <div className="bg-[#0b0b0b]/80 backdrop-blur-xl border border-white/5 rounded-[2.5rem] p-8 shadow-2xl h-full relative overflow-hidden group">
-       <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-
-      <div className="flex items-center justify-between mb-8 relative z-10">
-        <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
-            <Package size={20} />
-            </div>
-            <h2 className="text-xl font-black text-white tracking-tight">Critical Inventory</h2>
-        </div>
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 border border-white/10">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[10px] font-bold text-slate-300 uppercase">Sync</span>
-        </div>
-      </div>
-      
-      <div className="space-y-8 relative z-10">
-        
-        {/* Ventilators */}
-        <div className="group/item">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="p-1.5 bg-blue-500/10 rounded-md text-blue-400 group-hover/item:text-blue-300 transition-colors">
-                <Activity size={16} />
-              </div>
-              <span className="text-xs font-black text-slate-300 uppercase tracking-widest group-hover/item:text-white transition-colors">Ventilators</span>
-            </div>
-            <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20 shadow-[0_0_10px_rgba(59,130,246,0.1)]">
-              {ventInUse} <span className="text-slate-500">/</span> {v.total}
-            </span>
-          </div>
-          
-          <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden mb-2 relative">
-            <div 
-              className={`h-full rounded-full transition-all duration-1000 relative ${ventUsage > 80 ? 'bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.6)]' : 'bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]'}`} 
-              style={{ width: `${ventUsage}%` }}
-            >
-               <div className="absolute inset-0 bg-white/20 animate-pulse" />
-            </div>
-          </div>
-          <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-             <span>Available: <span className="text-white">{v.total - ventInUse}</span></span>
-             <span className={`${ventUsage > 80 ? 'text-rose-400' : 'text-slate-400'}`}>
-                {ventUsage > 90 && <AlertTriangle size={10} className="inline mr-1" />}
-                Utilization: {Math.round(ventUsage)}%
-             </span>
-          </div>
-        </div>
-
-        {/* Ambulances */}
-        <div className="group/item">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-               <div className="p-1.5 bg-emerald-500/10 rounded-md text-emerald-400 group-hover/item:text-emerald-300 transition-colors">
-                <Truck size={16} />
-              </div>
-              <span className="text-xs font-black text-slate-300 uppercase tracking-widest group-hover/item:text-white transition-colors">Fleet Status</span>
-            </div>
-            <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-              {ambAvailable} Ready
-            </span>
-          </div>
-          
-          <div className="grid grid-cols-10 gap-1.5">
-             {Array.from({ length: Math.max(a.total, 10) }).map((_, i) => (
-               <div 
-                 key={i} 
-                 className={`h-8 rounded-md transition-all duration-300 ${
-                   i < ambAvailable 
-                     ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)] hover:bg-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.6)] hover:scale-110' 
-                     : 'bg-white/5 border border-white/5 opacity-50'
-                 }`}
-               ></div>
-             ))}
-          </div>
-           <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right">
-             Total Fleet Size: <span className="text-slate-300">{a.total}</span>
-          </div>
-        </div>
-
-         {/* Medical Supplies (Mock for visual fullness) */}
-         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
-            <div className="p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-colors group/sub relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-2 opacity-10">
-                    <Syringe size={40} />
-                </div>
-                <div className="flex items-center gap-2 mb-2 text-indigo-400">
-                    <Syringe size={14} />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover/sub:text-indigo-300 transition-colors">Oxygen</span>
-                </div>
-                <div className="text-2xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">92%</div>
-                <div className="w-full bg-black/40 h-1 mt-2 rounded-full overflow-hidden">
-                    <div className="w-[92%] h-full bg-indigo-500 shadow-[0_0_10px_currentColor]" />
-                </div>
-            </div>
-            <div className="p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-amber-500/30 transition-colors group/sub relative overflow-hidden">
-                 <div className="absolute top-0 right-0 p-2 opacity-10">
-                    <Box size={40} />
-                </div>
-                <div className="flex items-center gap-2 mb-2 text-amber-400">
-                    <Box size={14} />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover/sub:text-amber-300 transition-colors">PPE Kits</span>
-                </div>
-                <div className="text-2xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">42%</div>
-                <div className="w-full bg-black/40 h-1 mt-2 rounded-full overflow-hidden">
-                    <div className="w-[42%] h-full bg-amber-500 shadow-[0_0_10px_currentColor]" />
-                </div>
-            </div>
-         </div>
-
-      </div>
+    <div className="relative w-16 h-16 flex items-center justify-center">
+      <svg className="transform -rotate-90 w-full h-full">
+        <circle cx="32" cy="32" r={radius} stroke="currentColor" strokeWidth="4" fill="transparent" className="text-slate-800" />
+        <circle
+          cx="32" cy="32" r={radius}
+          stroke="currentColor" strokeWidth="4" fill="transparent"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className={`${color} transition-all duration-1000 ease-spring-smooth`}
+        />
+      </svg>
+      <span className={`absolute text-[10px] font-black ${color}`}>{Math.round(percentage)}%</span>
     </div>
+  );
+};
+
+const Sparkline = ({ color }: { color: string }) => {
+  return (
+    <svg viewBox="0 0 100 30" className={`w-24 h-10 ${color} opacity-60`}>
+      <path
+        d="M0 25 Q 10 15, 20 25 T 40 10 T 60 20 T 80 5 T 100 15"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <path d="M0 25 Q 10 15, 20 25 T 40 10 T 60 20 T 80 5 T 100 15 V 30 H 0 Z" fill="currentColor" className="opacity-10" />
+    </svg>
+  )
+}
+
+const ResourceInventory: React.FC<ResourceProps> = () => {
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const fetchInventory = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/erp/inventory');
+      if (res.ok) {
+        const data = await res.json();
+        setInventory(data);
+      }
+    } catch (e) { console.error("Failed to fetch inventory", e); }
+  };
+
+  useEffect(() => {
+    fetchInventory();
+    const ws = new WebSocket('ws://localhost:8000/ws');
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'REFRESH_INVENTORY' || data.type === 'LOW_STOCK_ALERT') {
+        fetchInventory();
+      }
+    };
+    return () => ws.close();
+  }, []);
+
+  return (
+    <>
+      {/* VERTICAL TRIGGER TAB (Visible when closed) */}
+      <AnimatePresence>
+        {!isOpen && (
+          <motion.button
+            initial={{ x: 100, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 100, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 120, damping: 20 }}
+            onClick={() => setIsOpen(true)}
+            className="fixed top-1/2 -translate-y-1/2 right-0 z-[60] py-8 px-2 bg-[#0f172a] border-l border-y border-indigo-500/30 rounded-l-2xl shadow-[0_0_30px_rgba(99,102,241,0.2)] flex flex-col items-center justify-center gap-4 hover:bg-indigo-950/50 hover:border-indigo-500 transition-all cursor-pointer group"
+          >
+            <Package size={20} className="text-indigo-400 group-hover:text-white transition-colors animate-pulse" />
+            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] whitespace-nowrap group-hover:text-white transition-colors" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
+              Supply Node
+            </span>
+            <ChevronLeft size={16} className="text-slate-500 group-hover:-translate-x-1 transition-transform" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* DRAWER BACKDROP */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* DRAWER CONTAINER */}
+      <motion.div
+        initial={{ x: '100%' }}
+        animate={{ x: isOpen ? 0 : '100%' }}
+        exit={{ x: '100%' }}
+        transition={{ type: "spring", stiffness: 120, damping: 20 }}
+        className="fixed top-0 right-0 h-screen w-1/2 min-w-[500px] bg-[#020617] border-l border-indigo-500/20 shadow-2xl z-50 flex flex-col"
+      >
+        {/* HEADER */}
+        <div className="p-8 border-b border-white/5 flex items-center justify-between bg-[#0b0b0b]/50 backdrop-blur-md">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center border border-indigo-500/20 text-indigo-400">
+              <Package size={24} />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Supply Chain Node</h2>
+              <p className="text-xs text-indigo-400/60 font-bold tracking-widest uppercase">Real-time Logistics & Inventory</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+              <div className={`w-2 h-2 rounded-full ${inventory.some(i => i.quantity < i.reorder_level) ? 'bg-rose-500 animate-ping' : 'bg-emerald-500'} animate-pulse`} />
+              <span className="text-[9px] font-black text-emerald-400 uppercase tracking-wider">System Operational</span>
+            </div>
+            <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
+              <X size={24} className="text-slate-500 hover:text-white" />
+            </button>
+          </div>
+        </div>
+
+        {/* CONTENT */}
+        <div className="flex-1 overflow-y-auto p-8 space-y-4 custom-scrollbar bg-[#020617]">
+          <style jsx global>{`
+                    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+                    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                    .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 9999px; }
+                `}</style>
+
+          {inventory.map((item) => {
+            const isLow = item.quantity < item.reorder_level;
+            const percentage = Math.min((item.quantity / (item.reorder_level * 3)) * 100, 100);
+            const color = isLow ? 'text-rose-500' : 'text-emerald-500';
+            const borderColor = isLow ? 'border-rose-500/30' : 'border-slate-800';
+            const bg = isLow ? 'bg-rose-500/[0.03]' : 'bg-[#0f172a]';
+            const glow = isLow ? 'shadow-[0_0_30px_rgba(244,63,94,0.1)]' : 'hover:shadow-lg hover:shadow-indigo-500/5';
+
+            return (
+              <motion.div
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                key={item.id}
+                className={`group relative p-6 rounded-3xl border ${borderColor} ${bg} ${glow} transition-all duration-300`}
+              >
+                {isLow && (
+                  <div className="absolute top-0 right-0 p-4">
+                    <div className="flex items-center gap-2 px-3 py-1 bg-rose-500/20 border border-rose-500/30 rounded-lg animate-pulse">
+                      <AlertTriangle size={12} className="text-rose-500" />
+                      <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest">Critically Low</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-6">
+                  <CircularProgress percentage={percentage} color={color} />
+
+                  <div className="flex-1">
+                    <h3 className={`text-sm font-black uppercase tracking-widest mb-1 ${isLow ? 'text-rose-200' : 'text-slate-200'} group-hover:text-white transition-colors`}>{item.name}</h3>
+
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">{item.category}</p>
+                        <div className="flex items-baseline gap-1">
+                          <p className={`text-3xl font-black ${color} tracking-tighter`}>{item.quantity}</p>
+                          <span className="text-[10px] text-slate-600 font-bold uppercase">/ {item.reorder_level * 3} Units</span>
+                        </div>
+                      </div>
+                      <div className="hidden sm:block pb-1">
+                        <Sparkline color={isLow ? 'text-rose-500' : 'text-indigo-500'} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Bar */}
+                <div className="mt-4 flex justify-between items-center pt-4 border-t border-white/5">
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+                    <Activity size={12} />
+                    <span className="uppercase tracking-wider">Consumption Velocity</span>
+                  </div>
+                  <div className={`text-[9px] font-black px-3 py-1 rounded-md uppercase tracking-wider ${isLow ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                    {isLow ? 'Reorder Immediate' : 'Optimal Flow'}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+
+          {inventory.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-center opacity-50 py-20">
+              <Box size={48} className="text-indigo-500/50 mb-4 animate-bounce" />
+              <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Linking Supply Chain...</p>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </>
   );
 };
 
