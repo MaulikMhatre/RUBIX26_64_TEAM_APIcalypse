@@ -121,16 +121,10 @@ const CleaningTimer = ({ bedId, onRequestUnlock }: { bedId: string, onRequestUnl
     <div className="text-center py-2 bg-sky-500/10 rounded-lg border border-sky-400/20">
       <p className="text-[9px] font-black text-sky-400 uppercase">Sanitizing</p>
       <p className="text-lg font-black text-white font-mono">{timeLeft !== null ? formatTime(timeLeft) : "--:--"}</p>
-    </div>
-  );
-};
-
-const BedCard = ({ bed, onDischarge, onAdmit, onStartCleaning, onRefresh, accentColor, genderLock, patientGender }: any) => {
   const isRed = accentColor === 'red';
   const isGreen = accentColor === 'green';
   const isLocked = !bed.is_occupied && genderLock && genderLock !== 'Any' && patientGender && patientGender !== genderLock;
 
-  const occupiedStyle = isRed ? 'bg-red-500/10 border-red-500/30' : isGreen ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-blue-500/10 border-blue-500/30';
   const textClass = isRed ? 'text-red-400' : isGreen ? 'text-emerald-400' : 'text-blue-400';
 
   const handleManualUnlock = async () => {
@@ -272,7 +266,6 @@ const AdminPanel = () => {
     e.preventDefault();
     const staffId = localStorage.getItem('staff_id');
     if (!staffId) { toast("Auth Error", "error"); return; }
-
     try {
       const payload: any = {
         bed_id: String(selectedBed.id),
@@ -282,7 +275,6 @@ const AdminPanel = () => {
         staff_id: staffId,
         gender: patientData.gender
       };
-
       let res;
       if (selectedBed.type === 'Surgery') {
         res = await fetch(endpoints.startSurgery, {
@@ -293,7 +285,6 @@ const AdminPanel = () => {
       } else {
         res = await fetch(endpoints.admit, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       }
-
       if (res.ok) { setIsModalOpen(false); toast("Admission Confirmed", "success"); fetchERPData(); }
       else { toast("Admission Rejected", "error"); }
     } catch { toast("System Error", "error"); }

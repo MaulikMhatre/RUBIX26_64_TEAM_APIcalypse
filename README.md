@@ -4,9 +4,6 @@ HEALTH IT SYSTEMS
 PROJECT NAME- PHRELIS:ADVANCED MEDICAL INTELLIGENCE
 TEAM NAME-Apicalypse
 
-DEPLOYED LINK-N.A
-2-minute Demonstration Video link-https://drive.google.com/file/d/1Oei6iPnm21abbFYT2fWbSiRxrPO0FJ_f/view?usp=sharing 
-PPT Link-https://drive.google.com/file/d/1wH63sMR4DIt5nEqgsThxg6ZV7LjT0ftA/view?usp=sharing
 
 # 🏥 PHRELIS – Predictive Hospital Resource & Emergency Load Intelligence System
 

@@ -167,7 +167,6 @@ class MedicalAgent:
 # 4. INITIALIZE THE AGENT AFTER LOAD_DOTENV()
 ai_agent = MedicalAgent()
 
-
 # Connection Manager for WebSockets 
 class ConnectionManager:
     def __init__(self):
