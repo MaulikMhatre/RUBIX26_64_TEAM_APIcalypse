@@ -1,0 +1,13 @@
+# Ignore Backend Secrets & DB
+backend/.env
+backend/*.db
+backend/__pycache__/
+
+# Ignore Frontend Secrets & Modules
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# General
+.DS_Store
+.env
