@@ -1,4 +1,3 @@
-
 "use client";
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
@@ -15,29 +14,26 @@ import { endpoints } from '@/utils/api';
 import { useToast } from '@/context/ToastContext';
 
 // --- HELPERS ---
-const formatIST = (isoString: string) => {
-  if (!isoString) return "--:--";
-  const date = new Date(isoString);
+const formatIST = (isoString?: string) => {
+  const date = isoString ? new Date(isoString) : new Date();
   return date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
 };
 
-// --- SIMULATED ASSET DISTRIBUTION ---
 const getWardZone = (bedId: string): 'Medical' | 'Specialty' | 'Recovery' | 'Security' => {
-  const id = bedId.toUpperCase();
-  
-  if (id.includes('SPEC')) return 'Specialty';
-  if (id.includes('REC'))  return 'Recovery';
-  if (id.includes('SEC'))  return 'Security';
-  if (id.includes('MED') || id.includes('SEMIP')) return 'Medical';
-  
-  return 'Medical'; // Default fallback
+  const num = parseInt(bedId.replace(/^\D+/g, '') || '0');
+  if (num >= 1 && num <= 40) return 'Medical';
+  if (num >= 41 && num <= 70) return 'Specialty';
+  if (num >= 71 && num <= 90) return 'Recovery';
+  return 'Security';
 };
 
 const getBedGender = (bedId: string): 'Male' | 'Female' | 'Any' => {
-  if (bedId.includes('-M-')) return 'Male';
-  if (bedId.includes('-F-')) return 'Female';
+  const num = parseInt(bedId.replace(/^\D+/g, '') || '0');
+  if (num >= 1 && num <= 20) return 'Male';
+  if (num >= 21 && num <= 40) return 'Female';
   return 'Any';
 };
+
 // --- COMPONENTS ---
 
 const UnitHeroCard = ({ title, icon: Icon, total, occupied, isActive, onClick, colorClass }: any) => {
@@ -46,11 +42,11 @@ const UnitHeroCard = ({ title, icon: Icon, total, occupied, isActive, onClick, c
 
   const getColors = () => {
     switch (colorClass) {
-      case 'red': return { bg: 'bg-red-500', text: 'text-red-500', border: 'border-red-500', ring: 'ring-red-500' };
-      case 'blue': return { bg: 'bg-blue-500', text: 'text-blue-500', border: 'border-blue-500', ring: 'ring-blue-500' };
-      case 'indigo': return { bg: 'bg-indigo-500', text: 'text-indigo-500', border: 'border-indigo-500', ring: 'ring-indigo-500' };
-      case 'emerald': return { bg: 'bg-emerald-500', text: 'text-emerald-500', border: 'border-emerald-500', ring: 'ring-emerald-500' };
-      default: return { bg: 'bg-slate-500', text: 'text-slate-500', border: 'border-slate-500', ring: 'ring-slate-500' };
+      case 'red': return { bg: 'bg-red-500', text: 'text-red-500', border: 'border-red-500', ring: 'ring-red-500', gradient: 'from-red-500/20' };
+      case 'blue': return { bg: 'bg-blue-500', text: 'text-blue-500', border: 'border-blue-500', ring: 'ring-blue-500', gradient: 'from-blue-500/20' };
+      case 'indigo': return { bg: 'bg-indigo-500', text: 'text-indigo-500', border: 'border-indigo-500', ring: 'ring-indigo-500', gradient: 'from-indigo-500/20' };
+      case 'emerald': return { bg: 'bg-emerald-500', text: 'text-emerald-500', border: 'border-emerald-500', ring: 'ring-emerald-500', gradient: 'from-emerald-500/20' };
+      default: return { bg: 'bg-slate-500', text: 'text-slate-500', border: 'border-slate-500', ring: 'ring-slate-500', gradient: 'from-slate-500/20' };
     }
   };
   const c = getColors();
@@ -58,24 +54,33 @@ const UnitHeroCard = ({ title, icon: Icon, total, occupied, isActive, onClick, c
   return (
     <button
       onClick={onClick}
-      className={`relative p-5 rounded-2xl border transition-all duration-300 w-full text-left overflow-hidden group
-        ${isActive ? `${c.bg}/10 ${c.border} ring-1 ${c.ring}/50 shadow-lg` : 'bg-[#0a0a0a] border-white/5 opacity-60 hover:opacity-100'}`}
+      className={`relative p-6 rounded-3xl border transition-all duration-300 w-full text-left overflow-hidden group hover:-translate-y-1
+        ${isActive ? `bg-[#0f172a] ${c.border} shadow-2xl` : 'bg-[#0f172a]/40 border-slate-800 hover:border-slate-700 hover:bg-[#0f172a]/80'}`}
     >
-      <div className="flex justify-between items-start mb-4">
-        <div className={`p-3 rounded-xl ${isActive ? `${c.bg}/20 ${c.text}` : 'bg-white/5 text-slate-400'}`}>
+      <div className={`absolute inset-0 bg-gradient-to-br ${c.gradient} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${isActive ? 'opacity-20' : ''}`} />
+      <div className="relative z-10 flex justify-between items-start mb-6">
+        <div className={`p-4 rounded-2xl ${isActive ? `${c.bg} text-white shadow-lg` : 'bg-slate-800/50 text-slate-400'}`}>
           <Icon size={24} />
         </div>
         <div className="text-right">
-          <p className="text-2xl font-black text-white">{percentage}%</p>
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Occupancy</p>
+          <p className="text-3xl font-black text-white">{percentage}%</p>
+          <p className={`text-[10px] uppercase tracking-[0.2em] font-bold ${isActive ? c.text : 'text-slate-600'}`}>Occupancy</p>
         </div>
       </div>
-      <div className="space-y-2">
-        <h3 className={`text-sm font-bold uppercase tracking-widest ${isActive ? 'text-white' : 'text-slate-400'}`}>{title}</h3>
-        <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-          <motion.div initial={{ width: 0 }} animate={{ width: `${percentage}%` }} className={`h-full rounded-full ${isCritical ? 'bg-red-500' : `${c.bg}`}`} />
+      <div className="relative z-10 space-y-3">
+        <h3 className={`text-sm font-black uppercase tracking-widest ${isActive ? 'text-white' : 'text-slate-400'}`}>{title}</h3>
+        <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${percentage}%` }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className={`h-full rounded-full ${isCritical ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : `${c.bg}`}`}
+          />
         </div>
-        <p className="text-[10px] text-slate-500 font-medium pt-1"><span className="text-white font-bold">{occupied}</span> / {total} Active</p>
+        <div className="flex justify-between items-center pt-2">
+          <p className="text-[10px] text-slate-500 font-bold uppercase">Active Units</p>
+          <p className="text-xs font-mono text-white"><span className={`${c.text} font-bold`}>{occupied}</span> / {total}</p>
+        </div>
       </div>
     </button>
   );
@@ -112,18 +117,29 @@ const CleaningTimer = ({ bedId, onRequestUnlock }: { bedId: string, onRequestUnl
 
   if (isFinished) {
     return (
-      <button onClick={onRequestUnlock} className="w-full py-3 bg-emerald-500 text-white font-black rounded-xl animate-bounce">
-        RELEASE BED
+      <button onClick={onRequestUnlock} className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl animate-bounce shadow-lg shadow-emerald-500/20 transition-colors uppercase tracking-widest text-[10px]">
+        Mark Ready
       </button>
     );
   }
   return (
-    <div className="text-center py-2 bg-sky-500/10 rounded-lg border border-sky-400/20">
-      <p className="text-[9px] font-black text-sky-400 uppercase">Sanitizing</p>
-      <p className="text-lg font-black text-white font-mono">{timeLeft !== null ? formatTime(timeLeft) : "--:--"}</p>
+    <div className="text-center py-3 bg-sky-500/10 rounded-xl border border-sky-400/20">
+      <p className="text-[9px] font-black text-sky-400 uppercase tracking-widest mb-1">Sterilization</p>
+      <p className="text-2xl font-black text-white font-mono tracking-tighter">{timeLeft !== null ? formatTime(timeLeft) : "--:--"}</p>
+    </div>
+  );
+};
+
+const BedCard = ({ bed, onDischarge, onAdmit, onStartCleaning, onRefresh, accentColor, genderLock, patientGender }: any) => {
   const isRed = accentColor === 'red';
   const isGreen = accentColor === 'green';
   const isLocked = !bed.is_occupied && genderLock && genderLock !== 'Any' && patientGender && patientGender !== genderLock;
+
+  const occupiedStyle = isRed
+    ? 'bg-gradient-to-br from-red-950/40 to-red-900/10 border-red-500/30 shadow-[0_0_30px_rgba(220,38,38,0.1)]'
+    : isGreen
+      ? 'bg-gradient-to-br from-emerald-950/40 to-emerald-900/10 border-emerald-500/30 shadow-[0_0_30px_rgba(16,185,129,0.1)]'
+      : 'bg-gradient-to-br from-blue-950/40 to-blue-900/10 border-blue-500/30 shadow-[0_0_30px_rgba(59,130,246,0.1)]';
 
   const textClass = isRed ? 'text-red-400' : isGreen ? 'text-emerald-400' : 'text-blue-400';
 
@@ -137,56 +153,58 @@ const CleaningTimer = ({ bedId, onRequestUnlock }: { bedId: string, onRequestUnl
 
   if (isLocked) {
     return (
-      <div className="p-5 rounded-2xl border border-white/5 bg-white/[0.02] opacity-40 grayscale pointer-events-none relative overflow-hidden">
-        <div className="flex justify-between items-center mb-4">
-          <p className="text-[10px] font-black text-slate-500">{bed.id}</p>
-          <div className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[9px] font-bold uppercase">{genderLock} Only</div>
-        </div>
-        <div className="h-24 flex items-center justify-center border border-dashed border-white/10 rounded-xl">
-          <p className="text-[10px] uppercase font-bold text-slate-600">Gender Mismatch</p>
-        </div>
+      <div className="p-6 rounded-3xl border border-dashed border-slate-800 bg-[#0a0a0a]/50 opacity-40 grayscale pointer-events-none relative overflow-hidden flex flex-col items-center justify-center gap-2">
+        <ShieldAlert size={24} className="text-slate-600" />
+        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Restricted</p>
       </div>
     );
   }
 
   return (
-    <div className={`p-5 rounded-2xl border transition-all relative overflow-hidden group 
-      ${bed.status === 'OCCUPIED' ? occupiedStyle : bed.status === 'DIRTY' ? 'bg-orange-500/10 border-orange-500/30 animate-pulse' : bed.status === 'CLEANING' ? 'bg-sky-500/10 border-sky-500/30' : 'bg-white/5 border-white/5'}`}>
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex items-center gap-2">
-          <p className="text-[10px] font-black text-slate-500">{bed.id}</p>
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className={`p-6 rounded-3xl border transition-all relative overflow-hidden group 
+      ${bed.status === 'OCCUPIED' ? occupiedStyle : bed.status === 'DIRTY' ? 'bg-orange-500/5 border-orange-500/20' : bed.status === 'CLEANING' ? 'bg-sky-500/5 border-sky-500/20' : 'bg-[#0f172a] border-slate-800 hover:border-slate-700'}`}>
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-3">
+          <p className="text-xs font-black text-slate-400 px-3 py-1.5 rounded-lg bg-[#020617] border border-slate-800">{bed.id}</p>
           {genderLock && genderLock !== 'Any' && (
-            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${genderLock === 'Male' ? 'bg-blue-500/20 text-blue-300' : 'bg-pink-500/20 text-pink-300'}`}>
-              {genderLock.substring(0, 1)}
+            <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${genderLock === 'Male' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-pink-500/10 text-pink-400 border border-pink-500/20'}`}>
+              {genderLock}
             </span>
           )}
         </div>
-        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: bed.status === "AVAILABLE" ? "#32CD32" : bed.status === "OCCUPIED" ? (isRed ? "#FF4500" : "#3b82f6") : bed.status === "DIRTY" ? "#FFA500" : "#87CEEB" }} />
+        <div className={`w-2.5 h-2.5 rounded-full ring-4 ring-opacity-20 ${bed.status === "AVAILABLE" ? "bg-emerald-500 ring-emerald-500" : bed.status === "OCCUPIED" ? (isRed ? "bg-red-500 ring-red-500" : "bg-blue-500 ring-blue-500") : bed.status === "DIRTY" ? "bg-orange-500 ring-orange-500" : "bg-sky-500 ring-sky-500"}`} />
       </div>
-
       {bed.status === "OCCUPIED" ? (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div>
-            <p className="text-xs font-black text-white truncate uppercase mb-1">{bed.patient_name || "Unidentified"}</p>
-            <p className={`text-[9px] font-bold ${textClass} uppercase tracking-tighter`}>{bed.condition || "General"}</p>
-            {bed.ventilator_in_use && <span className="block mt-2 text-[9px] font-bold text-cyan-300 bg-cyan-500/20 px-2 py-1 rounded border border-cyan-500/30">VENTILATOR</span>}
+            <p className="text-lg font-black text-white truncate leading-tight">{bed.patient_name || "Unidentified"}</p>
+            <p className={`text-[10px] font-bold ${textClass} uppercase tracking-widest mt-1`}>{bed.condition || "General Care"}</p>
+            {bed.ventilator_in_use && <span className="inline-flex mt-3 items-center gap-1.5 text-[9px] font-black text-cyan-300 bg-cyan-950/50 px-3 py-1.5 rounded-md border border-cyan-500/30"><Activity size={10} /> VENTILATOR ONLINE</span>}
           </div>
-          <button onClick={onDischarge} className={`w-full py-2 ${isRed ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30' : 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30'} text-[10px] font-bold rounded-lg transition-colors`}>DISCHARGE</button>
+          <button onClick={onDischarge} className={`w-full py-3 ${isRed ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border-red-500/20' : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border-blue-500/20'} border rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors`}>Initiate Discharge</button>
         </div>
       ) : bed.status === "DIRTY" ? (
         <div className="space-y-4">
-          <p className="text-[10px] font-bold text-orange-400 text-center uppercase tracking-widest">Awaiting Cleaning</p>
-          <button onClick={() => onStartCleaning(bed.id)} className="w-full py-2 bg-orange-500/20 text-orange-300 text-[10px] font-bold rounded-lg">START CLEANING</button>
+          <div className="flex flex-col items-center py-4 text-orange-400/50">
+            <Baby size={32} className="mb-2 animate-pulse" />
+            <p className="text-[10px] font-bold uppercase tracking-widest">Unit Secluded</p>
+          </div>
+          <button onClick={() => onStartCleaning(bed.id)} className="w-full py-3 bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 text-[10px] font-black rounded-xl uppercase tracking-widest transition-colors">Start Protocol</button>
         </div>
       ) : bed.status === "CLEANING" ? (
         <CleaningTimer bedId={bed.id} onRequestUnlock={handleManualUnlock} />
       ) : (
-        <button onClick={onAdmit} className="w-full py-6 flex flex-col items-center justify-center text-slate-600 hover:text-white transition-colors gap-2">
-          <Plus size={24} />
-          <span className="text-[9px] font-bold uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Assign</span>
+        <button onClick={onAdmit} className="w-full py-10 flex flex-col items-center justify-center text-slate-700 hover:text-indigo-400 transition-all gap-3 border-2 border-dashed border-slate-800 hover:border-indigo-500/50 rounded-2xl bg-[#0a0a0a] group-hover:bg-[#0f172a]">
+          <div className="p-3 rounded-full bg-slate-900 group-hover:bg-indigo-500/20 transition-colors">
+            <Plus size={20} />
+          </div>
+          <span className="text-[10px] font-black uppercase tracking-widest">Assign Patient</span>
         </button>
       )}
-    </div>
+    </motion.div>
   );
 };
 
@@ -290,168 +308,244 @@ const AdminPanel = () => {
     } catch { toast("System Error", "error"); }
   };
 
-const getDisplayBeds = () => {
-  let filtered = beds.filter(b => b.type === activeUnit);
-  
-  if (activeUnit === 'Wards') {
-    return filtered.filter(b => {
-      const zone = getWardZone(b.id);
-      // DEBUG: This will show you exactly why the filtering is failing
-      console.log(`Bed ID: ${b.id} | Parsed Zone: ${zone} | Current Category: ${wardCategory}`);
-      return zone === wardCategory;
-    });
-  }
-  return filtered;
-};
+  const getDisplayBeds = () => {
+    const unitBeds = beds.filter(b => b.type === activeUnit);
+    if (activeUnit === 'Wards') {
+      return unitBeds.filter(b => {
+        const num = parseInt(b.id.replace(/^\D+/g, '') || '0');
+        if (wardCategory === 'Medical') return num >= 1 && num <= 40;
+        if (wardCategory === 'Specialty') return num >= 41 && num <= 70;
+        if (wardCategory === 'Recovery') return num >= 71 && num <= 90;
+        if (wardCategory === 'Security') return num >= 91;
+        return false;
+      });
+    }
+    return unitBeds;
+  };
 
   const getUnitStats = (type: string) => {
     const unitBeds = beds.filter(b => b.type === type);
     return { total: unitBeds.length, occupied: unitBeds.filter(b => b.status === "OCCUPIED").length };
   };
 
-  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center font-mono animate-pulse text-white">Initializing Phrelis OS...</div>;
+  if (loading) return (
+    <div className="min-h-screen bg-[#020617] flex items-center justify-center font-mono animate-pulse text-indigo-500">
+      <Activity className="animate-spin mr-3" />
+      INITIALIZING ORBITAL LINK...
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-black text-slate-200 p-8 font-sans">
-      <div className="max-w-[1800px] mx-auto space-y-8">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-white/10 pb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20"><Activity className="text-indigo-400 w-6 h-6" /></div>
-              <h1 className="text-4xl font-black tracking-tight text-white">Command Center</h1>
-            </div>
-            <p className="text-slate-500 pl-16 text-sm italic">{formatIST(new Date().toISOString())} • Orchestrating Hospital Resources</p>
-          </div>
-          <Link href="/" className="group flex items-center gap-2 px-6 py-3 rounded-xl bg-white/5 border border-white/10 hover:border-indigo-500/30 transition-all"><ArrowLeft size={16} className="text-slate-400" /><span className="text-xs font-bold uppercase tracking-widest">Dashboard Main</span></Link>
-        </header>
+    // REMOVED h-screen overflow-y-auto from here to let the body scroll
+    <div className="min-h-screen bg-[#020617] text-slate-200 selection:bg-indigo-500/30 selection:text-indigo-200">
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-250px)]">
-          <div className="lg:col-span-3 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-            <div className="bg-[#0a0a0a] rounded-3xl border border-white/10 p-6">
-              <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-3"><Siren size={18} className="text-red-500" /> Emergency Dispatch</h3>
-              <form onSubmit={handleDispatch} className="space-y-4">
-                <select className="w-full p-4 bg-white/5 border border-white/10 rounded-xl outline-none" value={dispatchForm.severity} onChange={e => setDispatchForm({ ...dispatchForm, severity: e.target.value })}>
-                  <option value="HIGH">CRITICAL (ICU)</option>
-                  <option value="LOW">STABLE (ER)</option>
-                </select>
-                <div className="grid grid-cols-2 gap-3">
-                  <input type="text" placeholder="Location" required className="p-4 bg-white/5 border border-white/10 rounded-xl" value={dispatchForm.location} onChange={e => setDispatchForm({ ...dispatchForm, location: e.target.value })} />
-                  <input type="number" required className="p-4 bg-white/5 border border-white/10 rounded-xl" value={dispatchForm.eta} onChange={e => setDispatchForm({ ...dispatchForm, eta: parseInt(e.target.value) })} />
+      <style jsx global>{`
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+      `}</style>
+
+      {/* Main Container - removed h-screen and fixed layout constraints */}
+      <div className="max-w-[1900px] mx-auto grid grid-cols-12 min-h-screen">
+
+        {/* CONTENT AREA - removed h-screen and overflow-y-auto */}
+        <div className="col-span-12 p-8 lg:p-12 flex flex-col gap-10 pb-60">
+
+          {/* HEADER */}
+          <div className="flex justify-between items-end border-b border-indigo-500/10 pb-8 shrink-0">
+            <div>
+              <h1 className="text-5xl font-black text-white tracking-tighter flex items-center gap-4">
+                <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(79,70,229,0.3)]">
+                  <Activity className="text-white" size={32} />
                 </div>
-                <button type="submit" className="w-full py-4 bg-red-600 text-white font-bold rounded-xl flex items-center justify-center gap-2"><Siren size={18} /> DISPATCH UNIT</button>
+                PHRELIS OS <span className="text-slate-700 font-light">| ADMIN</span>
+              </h1>
+              <p className="text-slate-500 font-mono text-sm mt-3 pl-20 flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                IST: {formatIST()} • SYSTEM ONLINE
+              </p>
+            </div>
+            <Link href="/" className="px-8 py-4 bg-[#0f172a] border border-slate-800 rounded-2xl text-xs font-black uppercase tracking-[0.2em] hover:bg-slate-800 hover:border-indigo-500/50 hover:text-white transition-all shadow-lg hover:shadow-indigo-500/10">
+              Dashboard Return
+            </Link>
+          </div>
+
+          {/* LAYER 1: LOGISTICS */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 shrink-0">
+            <div className="bg-[#0b0b0b] rounded-[2rem] border border-red-900/30 p-8 relative overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-br from-red-600/10 via-transparent to-transparent pointer-events-none" />
+              <div className="relative z-10 flex justify-between items-start mb-8">
+                <div>
+                  <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                    <div className="p-3 bg-red-500/10 rounded-xl border border-red-500/20">
+                      <Siren className="text-red-500" size={24} />
+                    </div>
+                    EMERGENCY DISPATCH
+                  </h3>
+                  <p className="text-xs text-red-400/60 font-bold uppercase tracking-[0.2em] mt-2 pl-16">High Priority Channel</p>
+                </div>
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-ping shadow-[0_0_20px_#ef4444]" />
+              </div>
+              <form onSubmit={handleDispatch} className="relative z-10 grid grid-cols-12 gap-4">
+                <div className="col-span-12 xl:col-span-3">
+                  <label className="text-[10px] font-bold text-red-500 uppercase ml-2 mb-1 block">Triage Level</label>
+                  <select className="w-full h-14 px-4 bg-[#0f172a] border border-red-900/30 focus:border-red-500 rounded-xl outline-none font-bold text-sm text-white appearance-none cursor-pointer hover:bg-[#1e293b] transition-colors" value={dispatchForm.severity} onChange={e => setDispatchForm({ ...dispatchForm, severity: e.target.value })}>
+                    <option value="HIGH">CRITICAL (RED)</option>
+                    <option value="LOW">STABLE (YELLOW)</option>
+                  </select>
+                </div>
+                <div className="col-span-12 xl:col-span-6">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase ml-2 mb-1 block">Incident Coordinates</label>
+                  <div className="relative">
+                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input type="text" placeholder="Location..." required className="w-full h-14 pl-12 pr-4 bg-[#0f172a] border border-slate-800 focus:border-red-500 rounded-xl text-sm font-medium text-white placeholder-slate-600 outline-none transition-all" value={dispatchForm.location} onChange={e => setDispatchForm({ ...dispatchForm, location: e.target.value })} />
+                  </div>
+                </div>
+                <button type="submit" className="col-span-12 xl:col-span-3 h-14 mt-auto bg-red-600 hover:bg-red-500 rounded-xl font-black text-white text-xs uppercase tracking-[0.15em] transition-all shadow-[0_5px_20px_rgba(220,38,38,0.3)] hover:shadow-[0_5px_30px_rgba(220,38,38,0.5)] transform hover:-translate-y-0.5">
+                  AUTHORIZE UNIT
+                </button>
               </form>
             </div>
 
-            <div className="bg-[#0a0a0a] rounded-3xl border border-white/10 p-6">
-              <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-3"><MapPin size={18} className="text-yellow-400" /> Fleet Status</h3>
-              <div className="space-y-3">
+            <div className="bg-[#0b0b0b] rounded-[2rem] border border-emerald-900/30 p-8 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/10 via-transparent to-transparent pointer-events-none" />
+              <div className="relative z-10 flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                    <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                      <Activity className="text-emerald-500" size={24} />
+                    </div>
+                    FLEET COMMAND
+                  </h3>
+                  <p className="text-xs text-emerald-400/60 font-bold uppercase tracking-[0.2em] mt-2 pl-16">
+                    <span className="text-white font-black text-sm">{ambulances.filter(a => a.status === 'IDLE').length}</span> Units Active
+                  </p>
+                </div>
+              </div>
+              <div className="relative z-10 flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
                 {ambulances.map(amb => (
-                  <div key={amb.id} className={`p-4 rounded-2xl border flex justify-between items-center ${amb.status === 'IDLE' ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-yellow-500/5 border-yellow-500/20'}`}>
-                    <div><span className="font-black text-white text-lg">{amb.id}</span><p className="text-xs text-slate-400">{amb.location}</p></div>
-                    {amb.status !== 'IDLE' && <button onClick={() => resetAmbulance(amb.id)} className="p-2 rounded-lg bg-white/5 text-slate-400"><X size={14} /></button>}
+                  <div key={amb.id} className={`shrink-0 w-40 p-5 rounded-2xl border flex flex-col justify-between h-32 transition-all ${amb.status === 'IDLE' ? 'bg-[#0f172a]/80 border-emerald-500/30 hover:border-emerald-500' : 'bg-amber-950/20 border-amber-500/20'}`}>
+                    <div className="flex justify-between items-start">
+                      <span className="font-black text-white text-lg">{amb.id}</span>
+                      <div className={`w-2 h-2 rounded-full ${amb.status === 'IDLE' ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-amber-500 animate-pulse'}`} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Sector</p>
+                      <div className="text-xs font-mono text-slate-300 truncate">{amb.location}</div>
+                    </div>
+                    {amb.status !== 'IDLE' && <button onClick={() => resetAmbulance(amb.id)} className="text-[9px] text-amber-500 font-bold uppercase hover:text-amber-400 text-left mt-2">Recall Unit &rarr;</button>}
                   </div>
                 ))}
               </div>
             </div>
-            <ResourceInventory resources={{ Ventilators: { total: 20, in_use: beds.filter(b => b.ventilator_in_use).length }, Ambulances: { total: ambulances.length, available: ambulances.filter(a => a?.status === 'IDLE').length } }} />
           </div>
 
-          <div className="lg:col-span-9 flex flex-col gap-6 h-full">
-            <div className="grid grid-cols-4 gap-4 shrink-0">
-              <UnitHeroCard title="ICU" icon={Activity} {...getUnitStats('ICU')} isActive={activeUnit === 'ICU'} onClick={() => setActiveUnit('ICU')} colorClass="red" />
-              <UnitHeroCard title="Emergency" icon={BedDouble} {...getUnitStats('ER')} isActive={activeUnit === 'ER'} onClick={() => setActiveUnit('ER')} colorClass="blue" />
-              <UnitHeroCard title="Surgery" icon={BrainCircuit} {...getUnitStats('Surgery')} isActive={activeUnit === 'Surgery'} onClick={() => setActiveUnit('Surgery')} colorClass="indigo" />
-              <UnitHeroCard title="Wards" icon={Package} {...getUnitStats('Wards')} isActive={activeUnit === 'Wards'} onClick={() => setActiveUnit('Wards')} colorClass="emerald" />
+          {/* LAYER 2: UNIT SWITCHER */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">
+            <UnitHeroCard title="ICU" icon={Activity} {...getUnitStats('ICU')} isActive={activeUnit === 'ICU'} onClick={() => setActiveUnit('ICU')} colorClass="red" />
+            <UnitHeroCard title="Emergency" icon={BedDouble} {...getUnitStats('ER')} isActive={activeUnit === 'ER'} onClick={() => setActiveUnit('ER')} colorClass="blue" />
+            <UnitHeroCard title="Surgery" icon={BrainCircuit} {...getUnitStats('Surgery')} isActive={activeUnit === 'Surgery'} onClick={() => setActiveUnit('Surgery')} colorClass="indigo" />
+            <UnitHeroCard title="Wards" icon={Package} {...getUnitStats('Wards')} isActive={activeUnit === 'Wards'} onClick={() => setActiveUnit('Wards')} colorClass="emerald" />
+          </div>
+
+          {/* LAYER 3: DYNAMIC ASSET GRID - removed h-full, fixed height, etc. */}
+          <div className="bg-[#0b0b0b] rounded-[2.5rem] border border-slate-800 p-8 relative overflow-hidden">
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
+            <div className="relative z-10 flex justify-between items-center mb-8">
+              <div>
+                <h2 className="text-4xl font-black text-white tracking-tighter">{activeUnit} Grid</h2>
+                <p className="text-xs text-indigo-400 font-bold uppercase tracking-[0.2em] mt-1">Live Asset Monitoring</p>
+              </div>
+              {activeUnit === 'Wards' && (
+                <div className="hidden xl:flex bg-[#0f172a] p-1.5 rounded-2xl border border-slate-800">
+                  {[{ id: 'Medical', icon: HeartPulse }, { id: 'Specialty', icon: Baby }, { id: 'Recovery', icon: Stethoscope }, { id: 'Security', icon: ShieldAlert }].map(cat => (
+                    <button key={cat.id} onClick={() => setWardCategory(cat.id as any)} className={`px-6 py-3 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 ${wardCategory === cat.id ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-white hover:bg-slate-800'}`}><cat.icon size={14} /> {cat.id}</button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="flex-1 bg-[#0a0a0a] rounded-3xl border border-white/10 p-6 flex flex-col relative overflow-hidden">
-              <div className="flex justify-between items-center mb-6 z-10">
-                <h2 className="text-2xl font-black text-white flex items-center gap-3">{activeUnit === 'Wards' ? `${wardCategory} Block` : activeUnit}</h2>
-                {activeUnit === 'Wards' && (
-                  <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
-                    {[{ id: 'Medical', icon: HeartPulse }, { id: 'Specialty', icon: Baby }, { id: 'Recovery', icon: Stethoscope }, { id: 'Security', icon: ShieldAlert }].map(cat => (
-                      <button key={cat.id} onClick={() => setWardCategory(cat.id as any)} className={`px-4 py-2 text-[10px] font-bold uppercase rounded-lg transition-all flex items-center gap-2 ${wardCategory === cat.id ? 'bg-emerald-500 text-white' : 'text-slate-400'}`}><cat.icon size={12} /> {cat.id}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
-                <AnimatePresence mode="wait">
-                  <motion.div key={activeUnit + wardCategory} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {activeUnit === 'Surgery' ? (
-                      <div className="col-span-full"><SurgerySection beds={beds} onRefresh={fetchERPData} onAdmit={openAdmitModal} /></div>
-                    ) : getDisplayBeds().map(bed => (
-                      <BedCard key={bed.id} bed={bed} onDischarge={() => setDischargeBedId(bed.id)} onAdmit={() => openAdmitModal(bed)} onStartCleaning={handleStartCleaning} onRefresh={fetchERPData} accentColor={activeUnit === 'ICU' ? 'red' : activeUnit === 'Wards' ? 'green' : 'blue'} genderLock={activeUnit === 'Wards' && wardCategory === 'Medical' ? getBedGender(bed.id) : null} patientGender={patientData.gender} />
-                    ))}
-                  </motion.div>
-                </AnimatePresence>
-              </div>
+            <div className="relative z-10">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeUnit + wardCategory}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                  className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5 gap-6"
+                >
+                  {activeUnit === 'Surgery' ? (
+                    <div className="col-span-full"><SurgerySection beds={beds} onRefresh={fetchERPData} onAdmit={openAdmitModal} /></div>
+                  ) : getDisplayBeds().map(bed => (
+                    <BedCard key={bed.id} bed={bed} onDischarge={() => setDischargeBedId(bed.id)} onAdmit={() => openAdmitModal(bed)} onStartCleaning={handleStartCleaning} onRefresh={fetchERPData} accentColor={activeUnit === 'ICU' ? 'red' : activeUnit === 'Wards' ? 'green' : 'blue'} genderLock={activeUnit === 'Wards' && wardCategory === 'Medical' ? getBedGender(bed.id) : null} patientGender={patientData.gender} />
+                  ))}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
         </div>
+
+        <ResourceInventory />
       </div>
 
+      {/* MODALS RENDERED OUTSIDE SCROLL FLOW */}
       <AnimatePresence>
         {isModalOpen && selectedBed && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#0a0a0a] rounded-3xl p-8 max-w-lg w-full border border-white/10 relative z-10">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-black text-white">Admit Patient</h2>
-                <button onClick={() => setIsModalOpen(false)}><X className="text-slate-500" /></button>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setIsModalOpen(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="bg-[#0b0b0b] rounded-[2.5rem] p-10 max-w-xl w-full border border-slate-800 relative z-10 shadow-2xl overflow-hidden">
+              <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-6">
+                <div>
+                  <h2 className="text-3xl font-black text-white tracking-tighter">Admit Patient</h2>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Authorized Personnel Only</p>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 bg-slate-900 rounded-full text-slate-400 hover:text-white hover:bg-red-500 transition-colors"><X size={20} /></button>
               </div>
-              <div className="p-4 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 mb-6 flex justify-between items-center">
-                <div><p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Target Bed</p><p className="text-xl font-black text-white">{selectedBed.id}</p></div>
-                {activeUnit === 'Wards' && wardCategory === 'Medical' && (
-                  <div className="text-right"><p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ward Policy</p><p className="text-sm font-bold text-white">{getBedGender(selectedBed.id)} Only</p></div>
-                )}
+              <div className="grid grid-cols-12 gap-6 mb-8">
+                <div className="col-span-12 p-6 bg-indigo-500/5 rounded-2xl border border-indigo-500/20 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Target Asset</p>
+                    <p className="text-3xl font-black text-white">{selectedBed.id}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-indigo-500 text-white rounded-xl flex items-center justify-center font-black">
+                    <BedDouble size={24} />
+                  </div>
+                </div>
               </div>
-              <form onSubmit={submitAdmission} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Full Name</label>
-                  <input required className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-white outline-none" value={patientData.name} onChange={e => setPatientData({ ...patientData, name: e.target.value })} />
+              <form onSubmit={submitAdmission} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Patient Full Name</label>
+                  <input required className="w-full p-5 bg-[#0f172a] border border-slate-800 focus:border-indigo-500 rounded-2xl text-white outline-none font-medium transition-all" placeholder="Enter name..." value={patientData.name} onChange={e => setPatientData({ ...patientData, name: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Age</label>
+                    <input type="number" required className="w-full p-5 bg-[#0f172a] border border-slate-800 focus:border-indigo-500 rounded-2xl text-white outline-none font-medium transition-all" value={patientData.age} onChange={e => setPatientData({ ...patientData, age: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Gender</label>
+                    <select className="w-full p-5 bg-[#0f172a] border border-slate-800 focus:border-indigo-500 rounded-2xl text-white outline-none font-medium transition-all appearance-none" value={patientData.gender} onChange={e => setPatientData({ ...patientData, gender: e.target.value })}><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option></select>
+                  </div>
                 </div>
                 {activeUnit === 'Surgery' && (
-                  <div className="space-y-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <label className="text-[10px] font-bold text-purple-500 uppercase ml-1 flex items-center gap-2"><UserCheck size={12} /> Attending Surgeon</label>
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <label className="text-[10px] font-black text-purple-400 uppercase tracking-widest ml-1 flex items-center gap-2">Attending Surgeon</label>
                     <div className="relative">
-                      <Stethoscope className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
-                      <input required className="w-full p-4 pl-12 bg-white/5 border border-purple-500/20 rounded-xl text-white outline-none" placeholder="CHIEF SURGEON..." value={patientData.surgeonName} onChange={e => setPatientData({ ...patientData, surgeonName: e.target.value })} />
+                      <Stethoscope className="absolute left-5 top-1/2 -translate-y-1/2 text-purple-500" size={18} />
+                      <input required className="w-full p-5 pl-14 bg-[#0f172a] border border-purple-500/30 focus:border-purple-500 rounded-2xl text-white outline-none font-medium" placeholder="Dr. Name..." value={patientData.surgeonName} onChange={e => setPatientData({ ...patientData, surgeonName: e.target.value })} />
                     </div>
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Age</label><input type="number" required className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-white outline-none" value={patientData.age} onChange={e => setPatientData({ ...patientData, age: e.target.value })} /></div>
-                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Gender</label><select className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-white outline-none" value={patientData.gender} onChange={e => setPatientData({ ...patientData, gender: e.target.value })}><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option></select></div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Condition</label>
-                  <select className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-white outline-none" value={patientData.condition} onChange={e => setPatientData({ ...patientData, condition: e.target.value })}><option>Stable</option><option>Critical</option><option>Observation</option><option>Pre-Surgery</option></select>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Condition</label>
+                  <select className="w-full p-5 bg-[#0f172a] border border-slate-800 focus:border-indigo-500 rounded-2xl text-white outline-none font-medium transition-all appearance-none" value={patientData.condition} onChange={e => setPatientData({ ...patientData, condition: e.target.value })}><option>Stable</option><option>Critical</option><option>Observation</option><option>Pre-Surgery</option></select>
                 </div>
                 {activeUnit === 'Wards' && wardCategory === 'Medical' && getBedGender(selectedBed.id) !== 'Any' && getBedGender(selectedBed.id) !== patientData.gender && (
-                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3"><ShieldAlert className="text-red-500" size={20} /><p className="text-xs font-bold text-red-200">Policy Violation: Reserved for {getBedGender(selectedBed.id)}.</p></div>
+                  <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-4 animate-pulse"><ShieldAlert className="text-red-500" size={24} /><p className="text-xs font-black text-red-400 uppercase tracking-wide">Violation: {getBedGender(selectedBed.id)} Only Unit.</p></div>
                 )}
-                <button 
-  type="submit" 
-  // 1. Logic to determine if the button should be disabled
-  disabled={
-    activeUnit === 'Wards' && 
-    wardCategory === 'Medical' && 
-    getBedGender(selectedBed.id) !== 'Any' && 
-    getBedGender(selectedBed.id) !== patientData.gender
-  }
-  // 2. Styling to show the user it is disabled
-  className={`w-full py-4 font-black rounded-xl mt-4 transition-all ${
-    (activeUnit === 'Wards' && 
-     wardCategory === 'Medical' && 
-     getBedGender(selectedBed.id) !== 'Any' && 
-     getBedGender(selectedBed.id) !== patientData.gender)
-    ? 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-50' 
-    : 'bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95'
-  }`}
->
-  CONFIRM ADMISSION
-</button>
+                <button type="submit" disabled={activeUnit === 'Wards' && wardCategory === 'Medical' && getBedGender(selectedBed.id) !== 'Any' && getBedGender(selectedBed.id) !== patientData.gender} className={`w-full py-5 font-black uppercase tracking-[0.2em] rounded-2xl mt-4 transition-all hover:scale-[1.02] active:scale-[0.98] ${(activeUnit === 'Wards' && wardCategory === 'Medical' && getBedGender(selectedBed.id) !== 'Any' && getBedGender(selectedBed.id) !== patientData.gender) ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-[0_10px_40px_rgba(79,70,229,0.3)]'}`}>Confirm Admission</button>
               </form>
             </motion.div>
           </div>
@@ -460,12 +554,16 @@ const getDisplayBeds = () => {
 
       <AnimatePresence>
         {dischargeBedId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDischargeBedId(null)} />
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#0a0a0a] rounded-3xl p-8 max-w-sm w-full border border-red-500/20 relative z-10 text-center">
-              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6"><LogOut size={32} className="text-red-500" /></div>
-              <h2 className="text-xl font-black text-white mb-2">Discharge Patient?</h2>
-              <div className="flex gap-3 mt-6"><button onClick={() => setDischargeBedId(null)} className="flex-1 py-3 bg-white/5 rounded-xl text-slate-300 font-bold">CANCEL</button><button onClick={confirmDischarge} className="flex-1 py-3 bg-red-600 rounded-xl text-white font-bold">CONFIRM</button></div>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setDischargeBedId(null)} />
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="bg-[#0b0b0b] rounded-[2.5rem] p-8 max-w-sm w-full border border-red-500/20 relative z-10 text-center shadow-[0_0_50px_rgba(220,38,38,0.2)]">
+              <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6 ring-1 ring-red-500/30"><LogOut size={32} className="text-red-500" /></div>
+              <h2 className="text-2xl font-black text-white mb-2 tracking-tight">Discharge Patient?</h2>
+              <p className="text-slate-500 text-sm mb-8 font-medium">This active bed will be marked for <span className="text-orange-400 font-bold">Sterilization Protocols</span> immediately.</p>
+              <div className="flex gap-4">
+                <button onClick={() => setDischargeBedId(null)} className="flex-1 py-4 bg-slate-900 rounded-2xl text-slate-300 font-bold uppercase tracking-wider hover:bg-slate-800 transition-colors">Cancel</button>
+                <button onClick={confirmDischarge} className="flex-1 py-4 bg-red-600 rounded-2xl text-white font-bold uppercase tracking-wider hover:bg-red-500 transition-colors shadow-lg shadow-red-600/20">Confirm</button>
+              </div>
             </motion.div>
           </div>
         )}
