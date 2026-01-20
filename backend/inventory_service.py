@@ -53,10 +53,16 @@ class InventoryService:
              items_to_deduct.extend([("Trauma IV Kit", 1), ("Saline Pack", 1)])
         elif context.startswith("Surgery"):
              items_to_deduct.extend([("OR Prep Kit", 1), ("Sterile Gowns", 2)])
+        elif context == "OPD_Consultation":
+             items_to_deduct.extend([("Gloves", 2), ("Tongue Depressor", 1)])
 
         # 2. Global Overrides (Infection Control)
         if "infec" in condition.lower() or "isolation" in condition.lower():
             items_to_deduct.append(("PPE Kit", 1))
+
+        # [NEW] Cleaning Context
+        if context == "Cleaning":
+             items_to_deduct.extend([("Sanitization Kit", 1), ("Bed Linens", 1)])
 
         # 3. Process Executions
         alerts = []

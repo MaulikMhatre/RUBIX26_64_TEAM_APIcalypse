@@ -189,6 +189,9 @@ class PatientQueue(Base):
     base_acuity = Column(Integer) # 1-5 (ESI)
     vitals = Column(JSON) # {hr, bp, spo2}
     symptoms = Column(JSON) # List of strings
+    icd_code = Column(String, nullable=True)
+    icd_rationale = Column(String, nullable=True)
+    triage_urgency = Column(String, nullable=True)
     check_in_time = Column(DateTime, default=datetime.utcnow)
     status = Column(String, default="WAITING") # WAITING, CONSULTATION, COMPLETED
     priority_score = Column(Float, default=0.0)

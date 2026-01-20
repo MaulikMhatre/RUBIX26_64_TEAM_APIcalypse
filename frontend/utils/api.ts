@@ -47,4 +47,5 @@ export const endpoints = {
   // History
   historyByDate: (date: string) => `${API_BASE_URL}/api/history/day/${date}`,
   historySurgery: `${API_BASE_URL}/api/history/surgery`,
+  historyOpd: `${API_BASE_URL}/api/history/opd`,
 };

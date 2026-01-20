@@ -1,4 +1,4 @@
-
+import simple_icd_10 as icd
 import uvicorn
 import math
 import uuid
@@ -99,6 +99,14 @@ class TriageDecision(BaseModel):
     acuity_label: str = Field(..., description="Short clinical label e.g., 'Hemodynamically Unstable'")
     recommended_actions: List[str] = Field(..., description="List of immediate medical actions")
 
+class ICDClassification(BaseModel):
+    icd_code: str
+    official_description: str
+    chapter_prefix: str
+    confidence_score: float
+    clinical_rationale: str
+    triage_urgency: str # CRITICAL | URGENT | STABLE
+
 class MedicalAgent:
     def __init__(self):
         # 2. GET API KEY EXPLICITLY
@@ -114,7 +122,7 @@ class MedicalAgent:
             # 3. PASS API KEY EXPLICITLY TO THE CONSTRUCTOR
             # Use 'api_key' parameter to ensure LangChain receives it correctly
             self.llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash", 
+                model="models/gemini-flash-latest", 
                 temperature=0,
                 api_key=api_key  # Pass it here explicitly
             )
@@ -180,6 +188,47 @@ class MedicalAgent:
                 bed_type="ER",
                 acuity_label="System Alert",
                 recommended_actions=["Manual Triage Required"]
+            )
+
+    async def classify_icd(self, complaint: str, symptoms: List[str]) -> ICDClassification:
+        if not self.active:
+            return ICDClassification(
+                icd_code="R69",
+                official_description="Illness, unspecified",
+                chapter_prefix="R",
+                confidence_score=0.5,
+                clinical_rationale="AI offline.",
+                triage_urgency="STABLE"
+            )
+
+        system_prompt = (
+            "You are the Phrelis OS Clinical Intelligence Core, a high-precision medical classification engine. "
+            "Your purpose is to map unstructured patient data to the ICD-10-CM (2026 Edition) ontology for real-time triage prioritization.\\n\\n"
+            "OPERATIONAL LOGIC:\\n"
+            "1. Anatomical Mapping: Identify the primary system (e.g., I=Circulatory, J=Respiratory, G=Nervous).\\n"
+            "2. Acuity Assessment: If keywords like 'sudden', 'sharp', 'crushing', or 'severe' are present, prioritize Acute classifications.\\n"
+            "3. Specificity Rule: If data is insufficient for a 7-character code, provide the most accurate 3-to-5 character category (e.g., I21.9 for unspecified MI).\\n\\n"
+            "Return a JSON object following the ICDClassification schema accurately."
+        )
+        
+        user_input = f"Primary Complaint: {complaint}. Supporting Symptoms: {symptoms}."
+        
+        try:
+            # Create a specialized structured LLM for ICD classification
+            structured_icd = self.llm.with_structured_output(ICDClassification)
+            return await structured_icd.ainvoke([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input}
+            ])
+        except Exception as e:
+            print(f"ICD Classification Error: {e}")
+            return ICDClassification(
+                icd_code="R68.89",
+                official_description="Other specified general symptoms and signs",
+                chapter_prefix="R",
+                confidence_score=0.0,
+                clinical_rationale=f"Fallback due to processing error: {str(e)[:50]}",
+                triage_urgency="STABLE"
             )
 
 # 4. INITIALIZE THE AGENT AFTER LOAD_DOTENV()
@@ -273,7 +322,9 @@ class QueueCheckInRequest(BaseModel):
     base_acuity: int # 1-5
     vitals: dict # {hr, bp, spo2}
     symptoms: List[str]
-
+    icd_code: Optional[str] = None
+    icd_rationale: Optional[str] = None
+    triage_urgency: Optional[str] = None
 #  Admin ERP Endpoints 
 
 
@@ -817,76 +868,235 @@ def get_surgery_history(db: Session = Depends(get_db)):
         return history
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/history/opd")
+def get_opd_history(db: Session = Depends(get_db)):
+    try:
+        records = db.query(models.PatientQueue).filter(
+            models.PatientQueue.status == "COMPLETED"
+        ).order_by(models.PatientQueue.check_in_time.desc()).all()
+        return records
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     
 # --- OPD Triage & Queue Logic ---
 
+
+# --- Integrated ICD-10 Priority Logic ---
+
+# Chapter-based weights (Industry standard approach)
+ICD_CHAPTER_WEIGHTS = {
+    "I": 40,  # Circulatory System
+    "J": 35,  # Respiratory System
+    "S": 30,  # Injury, poisoning (Trauma)
+    "T": 30,  # External causes
+    "G": 25,  # Nervous system
+    "A": 15,  # Infectious and parasitic
+    "B": 15,  # Infectious and parasitic
+    "E": 20,  # Endocrine/Metabolic
+    "L": 5,   # Skin diseases (Lower priority)
+}
+
 def calculate_priority_index(patient: models.PatientQueue):
     """
-    ESI Score: (6 - baseAcuity) * 20 points.
-    Symptom Weights: Bonus points for 'Chest Pain' (+25), 'Shortness of Breath' (+20), 'Fever' (+10).
-    Wait-Time Compensation: +1 point for every 2 minutes spent in the queue.
+    Phrelis Triage Algorithm v2.5 (ICD-10 Integrated)
     """
+    # 1. Base ESI: (6 - Level) * 20
     score = (6 - patient.base_acuity) * 20
     
-    # Symptom Bonuses
+    # 2. ICD-10 Dynamic Weighting [INTEGRATED]
+    if hasattr(patient, 'icd_code') and patient.icd_code:
+        # Validate using simple_icd_10 library
+        if icd.is_valid_item(patient.icd_code):
+            chapter = patient.icd_code[0].upper()
+            chapter_bonus = ICD_CHAPTER_WEIGHTS.get(chapter, 10)
+            score += chapter_bonus
+            
+    # 3. Standard Symptom Bonuses (Fallback/Addition)
     symptoms_lower = [s.lower() for s in (patient.symptoms or [])]
     if any("chest pain" in s for s in symptoms_lower): score += 25
-    if any("shortness of breath" in s or "sob" in s for s in symptoms_lower): score += 20
-    if any("fever" in s for s in symptoms_lower): score += 10
+    if any("shortness of breath" in s for s in symptoms_lower): score += 20
     
-    # Wait Time Compensation
+    # 4. Anti-Starvation (Wait-Time Compensation)
     wait_time_mins = (datetime.utcnow() - patient.check_in_time).total_seconds() / 60
     score += (wait_time_mins // 2)
     
     return float(score)
 
+# --- Updated API Endpoints ---
+
+@app.get("/api/queue/icd-validate")
+def validate_icd(code: str):
+    """
+    Bio-Intake Helper: Validates a code and returns the medical description.
+    """
+    is_valid = icd.is_valid_item(code)
+    return {
+        "valid": is_valid,
+        "description": icd.get_description(code) if is_valid else "Unknown Medical Code",
+        "chapter": code[0].upper() if is_valid else None
+    }
+
 @app.post("/api/queue/checkin")
 async def queue_checkin(request: QueueCheckInRequest, db: Session = Depends(get_db)):
+    """
+    Enhanced Check-in: Now accepts ICD-10 codes from the nurse's bio-intake form.
+    """
     new_id = str(uuid.uuid4())
+    
+    # Ensure the icd_code is part of your QueueCheckInRequest Pydantic model
     patient = models.PatientQueue(
         id=new_id,
         patient_name=request.patient_name,
         patient_age=request.patient_age,
         gender=request.gender,
         base_acuity=request.base_acuity,
+        icd_code=request.icd_code, # [INTEGRATED]
+        icd_rationale=request.icd_rationale,
+        triage_urgency=request.triage_urgency,
         vitals=request.vitals,
         symptoms=request.symptoms,
         check_in_time=datetime.utcnow(),
         status="WAITING"
     )
+    
     db.add(patient)
     db.commit()
     db.refresh(patient)
     
-    # Calculate initial score
+    # Calculate initial score based on ICD-10 + ESI
     patient.priority_score = calculate_priority_index(patient)
     db.commit()
     
     await manager.broadcast({"type": "QUEUE_UPDATE"})
-    return {"status": "success", "patient_id": new_id}
+    return {"status": "success", "patient_id": new_id, "priority_score": patient.priority_score}
+
+@app.post("/api/clinical/classify")
+async def clinical_classify(request: dict):
+    """
+    Phrelis OS Clinical Intelligence Core: Map unstructured data to ICD-10.
+    """
+    complaint = request.get("complaint", "")
+    symptoms = request.get("symptoms", [])
+    if isinstance(symptoms, str):
+        symptoms = [s.strip() for s in symptoms.split(",")]
+    
+    classification = await ai_agent.classify_icd(complaint, symptoms)
+    return classification
 
 @app.get("/api/queue/sorted")
 def get_sorted_queue(db: Session = Depends(get_db)):
+    """
+    Real-time Orchestration Hub: Recalculates all scores to 
+    account for growing wait times.
+    """
     patients = db.query(models.PatientQueue).filter(models.PatientQueue.status == "WAITING").all()
     
-    # Recalculate scores on the fly for real-time wait-time compensation
     for p in patients:
         p.priority_score = calculate_priority_index(p)
     
-    db.commit() # Save updated scores
+    db.commit() 
     
-    # Re-fetch sorted (or just sort in memory)
+    # Sort by Priority Score (Descending)
     sorted_patients = sorted(patients, key=lambda x: x.priority_score, reverse=True)
     
-    # Add Surge Warning logic
+    # Surge Logic
     avg_score = sum(p.priority_score for p in sorted_patients) / len(sorted_patients) if sorted_patients else 0
-    surge_warning = avg_score > 100 # Example threshold
+    surge_warning = avg_score > 105 # Critical threshold
 
     return {
         "patients": sorted_patients,
         "surge_warning": surge_warning,
-        "average_score": avg_score
+        "average_score": avg_score,
+        "system_status": "CRITICAL" if surge_warning else "STABLE"
     }
+
+# --- Internal ICD-10 Search Helper (For Demo) ---
+@app.get("/api/queue/icd-search")
+def search_icd_codes(query: str):
+    """
+    Simulated ICD-10 Lookup Service.
+    In a real app, this would hit an external library or ICD-10 database.
+    """
+    # Example mock data
+    mock_codes = [
+        {"code": "I21.9", "desc": "Acute Myocardial Infarction (Heart Attack)"},
+        {"code": "J44.9", "desc": "Chronic Obstructive Pulmonary Disease (COPD)"},
+        {"code": "S06.0X1A", "desc": "Concussion, Initial Encounter"},
+        {"code": "L03.90", "desc": "Cellulitis, Unspecified"}
+    ]
+    return [c for c in mock_codes if query.lower() in c['desc'].lower() or query.lower() in c['code'].lower()]
+
+
+
+
+# def calculate_priority_index(patient: models.PatientQueue):
+#     """
+#     ESI Score: (6 - baseAcuity) * 20 points.
+#     Symptom Weights: Bonus points for 'Chest Pain' (+25), 'Shortness of Breath' (+20), 'Fever' (+10).
+#     Wait-Time Compensation: +1 point for every 2 minutes spent in the queue.
+#     """
+#     score = (6 - patient.base_acuity) * 20
+    
+#     # Symptom Bonuses
+#     symptoms_lower = [s.lower() for s in (patient.symptoms or [])]
+#     if any("chest pain" in s for s in symptoms_lower): score += 25
+#     if any("shortness of breath" in s or "sob" in s for s in symptoms_lower): score += 20
+#     if any("fever" in s for s in symptoms_lower): score += 10
+    
+#     # Wait Time Compensation
+#     wait_time_mins = (datetime.utcnow() - patient.check_in_time).total_seconds() / 60
+#     score += (wait_time_mins // 2)
+    
+#     return float(score)
+
+# @app.post("/api/queue/checkin")
+# async def queue_checkin(request: QueueCheckInRequest, db: Session = Depends(get_db)):
+#     new_id = str(uuid.uuid4())
+#     patient = models.PatientQueue(
+#         id=new_id,
+#         patient_name=request.patient_name,
+#         patient_age=request.patient_age,
+#         gender=request.gender,
+#         base_acuity=request.base_acuity,
+#         vitals=request.vitals,
+#         symptoms=request.symptoms,
+#         check_in_time=datetime.utcnow(),
+#         status="WAITING"
+#     )
+#     db.add(patient)
+#     db.commit()
+#     db.refresh(patient)
+    
+#     # Calculate initial score
+#     patient.priority_score = calculate_priority_index(patient)
+#     db.commit()
+    
+#     await manager.broadcast({"type": "QUEUE_UPDATE"})
+#     return {"status": "success", "patient_id": new_id}
+
+# @app.get("/api/queue/sorted")
+# def get_sorted_queue(db: Session = Depends(get_db)):
+#     patients = db.query(models.PatientQueue).filter(models.PatientQueue.status == "WAITING").all()
+    
+#     # Recalculate scores on the fly for real-time wait-time compensation
+#     for p in patients:
+#         p.priority_score = calculate_priority_index(p)
+    
+#     db.commit() # Save updated scores
+    
+#     # Re-fetch sorted (or just sort in memory)
+#     sorted_patients = sorted(patients, key=lambda x: x.priority_score, reverse=True)
+    
+#     # Add Surge Warning logic
+#     avg_score = sum(p.priority_score for p in sorted_patients) / len(sorted_patients) if sorted_patients else 0
+#     surge_warning = avg_score > 100 # Example threshold
+
+#     return {
+#         "patients": sorted_patients,
+#         "surge_warning": surge_warning,
+#         "average_score": avg_score
+#     }
 
 @app.get("/api/queue/rooms")
 def get_doctor_rooms(db: Session = Depends(get_db)):
