@@ -32,7 +32,7 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body 
+      <body
         className={`${inter.className} bg-[#020617] min-h-screen flex flex-col transition-colors duration-500`}
         suppressHydrationWarning
       >

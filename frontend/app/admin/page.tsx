@@ -12,21 +12,23 @@ import ResourceInventory from '@/components/ResourceInventory';
 import SurgerySection from '@/components/SurgerySection';
 import { endpoints } from '@/utils/api';
 import { useToast } from '@/context/ToastContext';
+import { useBedOccupancy } from '@/hooks/useBedOccupancy';
+import HandshakeModal from '@/components/HandshakeModal';
 
 // --- HELPERS ---
 const formatIST = (isoString?: string) => {
   if (!isoString) return "--:--";
-  
+
   const date = new Date(isoString);
-  
+
   // If the date is invalid (NaN), return a fallback
   if (isNaN(date.getTime())) return "Invalid Time";
 
-  return date.toLocaleTimeString('en-IN', { 
-    timeZone: 'Asia/Kolkata', 
-    hour: '2-digit', 
+  return date.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: true 
+    hour12: true
   });
 };
 
@@ -237,6 +239,9 @@ const AdminPanel = () => {
   const [dispatchForm, setDispatchForm] = useState({ severity: 'HIGH', location: '', eta: 10 });
   const [dischargeBedId, setDischargeBedId] = useState<string | null>(null);
 
+  const { isFull } = useBedOccupancy();
+  const [isHandshakeOpen, setIsHandshakeOpen] = useState(false);
+
   const fetchERPData = useCallback(async () => {
     try {
       const [bedsRes, ambRes] = await Promise.all([fetch(endpoints.beds), fetch(endpoints.ambulances)]);
@@ -398,10 +403,10 @@ const AdminPanel = () => {
                 </div>
                 <div className="w-3 h-3 bg-red-500 rounded-full animate-ping shadow-[0_0_20px_#ef4444]" />
               </div>
-              <form onSubmit={handleDispatch} className="relative z-10 grid grid-cols-12 gap-4">
+              <form onSubmit={isFull ? (e) => { e.preventDefault(); setIsHandshakeOpen(true); } : handleDispatch} className="relative z-10 grid grid-cols-12 gap-4">
                 <div className="col-span-12 xl:col-span-3">
                   <label className="text-[10px] font-bold text-red-500 uppercase ml-2 mb-1 block">Triage Level</label>
-                  <select className="w-full h-14 px-4 bg-[#0f172a] border border-red-900/30 focus:border-red-500 rounded-xl outline-none font-bold text-sm text-white appearance-none cursor-pointer hover:bg-[#1e293b] transition-colors" value={dispatchForm.severity} onChange={e => setDispatchForm({ ...dispatchForm, severity: e.target.value })}>
+                  <select disabled={isFull} className={`w-full h-14 px-4 bg-[#0f172a] border border-red-900/30 focus:border-red-500 rounded-xl outline-none font-bold text-sm text-white appearance-none cursor-pointer hover:bg-[#1e293b] transition-colors ${isFull ? 'opacity-50 cursor-not-allowed' : ''}`} value={dispatchForm.severity} onChange={e => setDispatchForm({ ...dispatchForm, severity: e.target.value })}>
                     <option value="HIGH">CRITICAL (RED)</option>
                     <option value="LOW">STABLE (YELLOW)</option>
                   </select>
@@ -410,12 +415,19 @@ const AdminPanel = () => {
                   <label className="text-[10px] font-bold text-slate-500 uppercase ml-2 mb-1 block">Incident Coordinates</label>
                   <div className="relative">
                     <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                    <input type="text" placeholder="Location..." required className="w-full h-14 pl-12 pr-4 bg-[#0f172a] border border-slate-800 focus:border-red-500 rounded-xl text-sm font-medium text-white placeholder-slate-600 outline-none transition-all" value={dispatchForm.location} onChange={e => setDispatchForm({ ...dispatchForm, location: e.target.value })} />
+                    <input disabled={isFull} type="text" placeholder={isFull ? "Zone Locked - Auto-Divert Active" : "Location..."} required className={`w-full h-14 pl-12 pr-4 bg-[#0f172a] border border-slate-800 focus:border-red-500 rounded-xl text-sm font-medium text-white placeholder-slate-600 outline-none transition-all ${isFull ? 'opacity-50 cursor-not-allowed' : ''}`} value={dispatchForm.location} onChange={e => setDispatchForm({ ...dispatchForm, location: e.target.value })} />
                   </div>
                 </div>
-                <button type="submit" className="col-span-12 xl:col-span-3 h-14 mt-auto bg-red-600 hover:bg-red-500 rounded-xl font-black text-white text-xs uppercase tracking-[0.15em] transition-all shadow-[0_5px_20px_rgba(220,38,38,0.3)] hover:shadow-[0_5px_30px_rgba(220,38,38,0.5)] transform hover:-translate-y-0.5">
-                  AUTHORIZE UNIT
-                </button>
+
+                {isFull ? (
+                  <button type="button" onClick={() => setIsHandshakeOpen(true)} className="col-span-12 xl:col-span-3 h-14 mt-auto bg-orange-500 hover:bg-orange-400 rounded-xl font-black text-black text-xs uppercase tracking-[0.15em] transition-all shadow-[0_0_20px_rgba(249,115,22,0.4)] animate-pulse hover:scale-[1.02]">
+                    REROUTE TO PARTNER NODE
+                  </button>
+                ) : (
+                  <button type="submit" className="col-span-12 xl:col-span-3 h-14 mt-auto bg-red-600 hover:bg-red-500 rounded-xl font-black text-white text-xs uppercase tracking-[0.15em] transition-all shadow-[0_5px_20px_rgba(220,38,38,0.3)] hover:shadow-[0_5px_30px_rgba(220,38,38,0.5)] transform hover:-translate-y-0.5">
+                    AUTHORIZE UNIT
+                  </button>
+                )}
               </form>
             </div>
 
@@ -578,6 +590,10 @@ const AdminPanel = () => {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        <HandshakeModal isOpen={isHandshakeOpen} onClose={() => setIsHandshakeOpen(false)} />
       </AnimatePresence>
     </div>
   );

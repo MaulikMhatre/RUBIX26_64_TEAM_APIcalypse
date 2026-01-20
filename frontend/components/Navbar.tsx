@@ -3,17 +3,8 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from 'next/link';
 import { motion } from "framer-motion";
 import {
-  LayoutDashboard,
-  Stethoscope,
-  LineChart,
-  Activity,
-  Settings,
-  Clock,
-  Network,
-  Users,
-  ClipboardCheck,
-  LogOut,
-  Shield
+  LayoutDashboard, Stethoscope, LineChart, Activity, Settings,
+  Clock, Network, Users, ClipboardCheck, LogOut, Shield
 } from 'lucide-react';
 import DiversionBanner from './DiversionBanner';
 
@@ -22,73 +13,75 @@ const Navbar = () => {
   const router = useRouter();
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("staff_id");
+    localStorage.clear();
     router.push("/");
   };
 
   const navItems = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Analytics', href: '/predictions', icon: LineChart },
-    { name: 'OPD', href: '/queue', icon: Stethoscope },
-    { name: 'Triage', href: '/triage', icon: Stethoscope },
-    { name: 'Admin', href: '/admin', icon: Settings },
-    { name: 'History', href: '/history', icon: Clock },
-    { name: 'Staff', href: '/staff', icon: Users },
-    { name: 'Sentinel', href: '/sentinel', icon: Network },
-    { name: 'Command Centre', href: '/command-centre', icon: Shield },
-    { name: 'Smart Nursing', href: '/staff/worklist', icon: ClipboardCheck }
+    { name: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
+    { name: 'Analytics', icon: LineChart, href: '/predictions' },
+    { name: 'OPD', icon: Stethoscope, href: '/queue' },
+    { name: 'Triage', icon: Activity, href: '/triage' },
+    { name: 'Admin', icon: Settings, href: '/admin' },
+    { name: 'History', icon: Clock, href: '/history' },
+    { name: 'Staff', icon: Users, href: '/staff' },
+    { name: 'Sentinel', icon: Network, href: '/sentinel' },
+    { name: 'Command', icon: Shield, href: '/command-centre' },
+    { name: 'Nursing', icon: ClipboardCheck, href: '/staff/worklist' }
   ];
 
   return (
     <>
       <DiversionBanner />
-      <nav className="sticky top-0 z-50 w-full bg-black/80 backdrop-blur-xl text-white border-b border-white/5">
-        <div className="max-w-[1600px] mx-auto px-8">
-          <div className="flex items-center justify-between h-20">
+      <nav className="sticky top-0 z-50 w-full bg-[#050505]/80 backdrop-blur-2xl border-b border-white/[0.08]">
+        <div className="max-w-[1800px] mx-auto px-6 h-20">
+          <div className="flex items-center justify-between h-full">
 
-            {/* LEFT: Logo Section */}
-            <div
-              className="flex items-center gap-4 pr-8 border-r border-white/10 group cursor-pointer"
+            {/* BRANDING: Increased spacing & luxury weight */}
+            <div 
+              className="flex items-center gap-5 pr-10 border-r border-white/[0.08] cursor-pointer group"
               onClick={() => router.push('/dashboard')}
             >
-              <div className="p-2 bg-indigo-600 rounded-lg shadow-[0_0_15px_rgba(79,70,229,0.3)] transition-transform group-hover:scale-105">
-                <Activity className="w-5 h-5 text-white" />
+              <div className="relative">
+                <div className="absolute inset-0 bg-indigo-500 blur-lg opacity-20 group-hover:opacity-40 transition-opacity" />
+                <div className="relative p-2.5 bg-indigo-600 rounded-xl">
+                  <Activity className="w-5 h-5 text-white" />
+                </div>
               </div>
               <div className="flex flex-col">
-                <span className="text-lg font-black tracking-tighter uppercase italic leading-none">
+                <span className="text-xl font-black tracking-tighter uppercase italic leading-none text-white">
                   Phrelis <span className="text-indigo-500">OS</span>
                 </span>
-                <span className="text-[9px] font-bold text-slate-500 tracking-[0.3em] uppercase mt-1">
+                <span className="text-[9px] font-bold text-slate-500 tracking-[0.4em] uppercase mt-1.5">
                   Intelligence v2.4
                 </span>
               </div>
             </div>
 
-            {/* CENTER: Navigation Links */}
-            <div className="hidden xl:flex items-center justify-center flex-1 px-4 gap-1">
+            {/* NAV: Dynamic spacing and high-end interaction */}
+            <div className="flex-1 flex items-center justify-center px-8 gap-1 2xl:gap-2">
               {navItems.map((item) => {
                 const isActive = pathname === item.href;
-                const Icon = item.icon;
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`relative flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-300 group/link ${isActive
-                      ? 'text-white bg-white/5 border border-white/5'
-                      : 'text-slate-500 hover:text-slate-200 hover:bg-white/[0.03]'
-                      }`}
+                    className={`group relative flex flex-col items-center justify-center px-4 py-2 rounded-xl transition-all duration-500 ${
+                      isActive ? 'text-white' : 'text-slate-500 hover:text-slate-200'
+                    }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-400' : 'text-slate-600 group-hover/link:text-indigo-400'}`} />
-                    <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
+                    <item.icon className={`w-4 h-4 mb-1.5 transition-colors duration-500 ${
+                      isActive ? 'text-indigo-400' : 'group-hover:text-indigo-300'
+                    }`} />
+                    <span className="text-[9px] font-black uppercase tracking-[0.15em]">
                       {item.name}
                     </span>
-
+                    
                     {isActive && (
-                      <motion.span
-                        layoutId="nav-glow"
-                        className="absolute -bottom-[21px] left-1/2 -translate-x-1/2 w-8 h-[2px] bg-indigo-500 rounded-full shadow-[0_0_10px_#6366f1]"
+                      <motion.div
+                        layoutId="active-pill"
+                        className="absolute inset-0 bg-white/[0.03] border border-white/[0.05] rounded-xl -z-10"
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                       />
                     )}
                   </Link>
@@ -96,25 +89,24 @@ const Navbar = () => {
               })}
             </div>
 
-            {/* RIGHT: System Status & Logout */}
-            <div className="flex items-center gap-6 pl-8 border-l border-white/10">
-              <div className="hidden lg:flex flex-col items-end">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Cloud Sync Active</span>
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                  </span>
+            {/* SYSTEM: Minimalist status & refined exit */}
+            <div className="flex items-center gap-8 pl-10 border-l border-white/[0.08]">
+              <div className="hidden xl:flex flex-col items-end">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Live Sync</span>
+                  <div className="flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute h-1.5 w-1.5 rounded-full bg-emerald-400 opacity-40"></span>
+                    <span className="relative h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                  </div>
                 </div>
-                <span className="text-[8px] font-bold text-slate-600 uppercase tracking-tighter">System Health: Optimal</span>
+                <span className="text-[8px] font-bold text-slate-600 uppercase tracking-tighter mt-1">Health: Optimal</span>
               </div>
 
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all duration-300"
+                className="group p-3 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all duration-500"
               >
-                <LogOut size={14} />
-                <span className="text-[10px] font-black uppercase tracking-widest">Logout</span>
+                <LogOut size={18} className="group-hover:scale-110 transition-transform" />
               </button>
             </div>
 

@@ -8,12 +8,17 @@ interface TriageResult {
   recommended_actions: string[];
 }
 
+import { useBedOccupancy } from '@/hooks/useBedOccupancy';
+import HandshakeModal from '@/components/HandshakeModal';
+import { Activity } from 'lucide-react';
 import { endpoints } from '@/utils/api';
 
 const TriageAssistant: React.FC = () => {
   const [symptoms, setSymptoms] = useState("");
   const [result, setResult] = useState<TriageResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const { isFull } = useBedOccupancy();
+  const [isHandshakeOpen, setIsHandshakeOpen] = useState(false);
 
   const handleAssess = async () => {
     setLoading(true);
@@ -23,7 +28,7 @@ const TriageAssistant: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           symptoms: symptoms.split(',').map(s => s.trim()),
-          vitals: {} 
+          vitals: {}
         })
       });
       const data = await res.json();
@@ -36,15 +41,15 @@ const TriageAssistant: React.FC = () => {
   };
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md border-t-4 border-blue-500">
+    <div className="bg-white p-6 rounded-lg shadow-md border-t-4 border-blue-500 relative">
       <h2 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
         <Stethoscope className="w-5 h-5" /> Smart Triage
       </h2>
-      
+
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">Patient Symptoms (comma separated)</label>
-          <textarea 
+          <textarea
             rows={3}
             placeholder="e.g. chest pain, shortness of breath, high fever"
             value={symptoms}
@@ -52,33 +57,49 @@ const TriageAssistant: React.FC = () => {
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
           />
         </div>
-        
-        <button 
-          onClick={handleAssess}
-          disabled={loading || !symptoms}
-          className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-        >
-          {loading ? 'Assessing...' : 'Assess Patient'}
-        </button>
+
+        {isFull ? (
+          <div className="space-y-2">
+            <button
+              onClick={() => setIsHandshakeOpen(true)}
+              className="w-full flex justify-center items-center py-4 px-4 border border-transparent rounded-md shadow-[0_0_20px_rgba(239,68,68,0.5)] text-sm font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 focus:outline-none animate-pulse"
+            >
+              INITIATE EXTERNAL HANDSHAKE
+            </button>
+            <div className="flex justify-center items-center gap-2 text-red-600">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+              </span>
+              <span className="text-xs font-bold uppercase">Capacity Full • Direct Halt</span>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={handleAssess}
+            disabled={loading || !symptoms}
+            className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            {loading ? 'Assessing...' : 'Assess Patient'}
+          </button>
+        )}
       </div>
 
       {result && (
-        <div className={`mt-6 p-4 rounded-md border ${
-          result.severity === 'Critical' ? 'bg-red-50 border-red-200' :
+        <div className={`mt-6 p-4 rounded-md border ${result.severity === 'Critical' ? 'bg-red-50 border-red-200' :
           result.severity === 'High' ? 'bg-orange-50 border-orange-200' :
-          'bg-green-50 border-green-200'
-        }`}>
+            'bg-green-50 border-green-200'
+          }`}>
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm font-medium text-gray-500">Severity Level</span>
-            <span className={`text-xl font-bold ${
-              result.severity === 'Critical' ? 'text-red-700' :
+            <span className={`text-xl font-bold ${result.severity === 'Critical' ? 'text-red-700' :
               result.severity === 'High' ? 'text-orange-700' :
-              'text-green-700'
-            }`}>
+                'text-green-700'
+              }`}>
               {result.severity}
             </span>
           </div>
-          
+
           <div className="mt-2">
             <p className="text-xs font-semibold text-gray-500 uppercase">Recommended Actions:</p>
             <ul className="list-disc pl-4 text-sm text-gray-700 mt-1">
@@ -89,6 +110,8 @@ const TriageAssistant: React.FC = () => {
           </div>
         </div>
       )}
+
+      <HandshakeModal isOpen={isHandshakeOpen} onClose={() => setIsHandshakeOpen(false)} />
     </div>
   );
 };

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PlusCircle, Activity, Thermometer, Droplets, User, Calendar, Info, ShieldCheck, Search, Sparkles, AlertTriangle } from "lucide-react";
+import { useBedOccupancy } from "@/hooks/useBedOccupancy";
+import HandshakeModal from "@/components/HandshakeModal";
 
 export default function QueueIncoming({ onCheckIn }: { onCheckIn: (data: any) => void }) {
     const [formData, setFormData] = useState({
@@ -23,6 +25,8 @@ export default function QueueIncoming({ onCheckIn }: { onCheckIn: (data: any) =>
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { isFull } = useBedOccupancy();
+    const [isHandshakeOpen, setIsHandshakeOpen] = useState(false);
 
     const handleAIAnalyze = async () => {
         if (!formData.complaint && !formData.symptoms) {
@@ -201,8 +205,8 @@ export default function QueueIncoming({ onCheckIn }: { onCheckIn: (data: any) =>
                                         ICD: {formData.icd_code}
                                     </span>
                                     <span className={`font-black px-2 py-0.5 rounded border ${formData.triage_urgency === 'CRITICAL' || formData.triage_urgency === 'EMERGENCY' ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' :
-                                            formData.triage_urgency === 'URGENT' ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' :
-                                                'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                                        formData.triage_urgency === 'URGENT' ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' :
+                                            'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
                                         }`}>
                                         {formData.triage_urgency}
                                     </span>
@@ -258,15 +262,34 @@ export default function QueueIncoming({ onCheckIn }: { onCheckIn: (data: any) =>
                     </div>
                 </div>
 
-                <motion.button
-                    whileHover={{ scale: 1.02, backgroundColor: "#2563eb" }}
-                    whileTap={{ scale: 0.98 }}
-                    type="submit"
-                    className="w-full py-4 bg-blue-700 text-white font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl shadow-2xl shadow-blue-900/40 border border-blue-400/20"
-                >
-                    Commit Check-In
-                </motion.button>
+                {isFull ? (
+                    <motion.div className="space-y-2">
+                        <motion.button
+                            whileHover={{ scale: 1.02, backgroundColor: "#dc2626" }}
+                            whileTap={{ scale: 0.98 }}
+                            type="button"
+                            onClick={() => setIsHandshakeOpen(true)}
+                            className="w-full py-4 bg-red-600 text-white font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl shadow-[0_0_30px_rgba(220,38,38,0.4)] border border-red-500/20 animate-pulse flex items-center justify-center gap-2"
+                        >
+                            <AlertTriangle className="w-4 h-4" /> INITIATE EXTERNAL HANDSHAKE
+                        </motion.button>
+                        <p className="text-center text-[9px] font-bold text-red-500 uppercase tracking-widest">
+                            Capacity Critical • Triage Bypass Active
+                        </p>
+                    </motion.div>
+                ) : (
+                    <motion.button
+                        whileHover={{ scale: 1.02, backgroundColor: "#2563eb" }}
+                        whileTap={{ scale: 0.98 }}
+                        type="submit"
+                        className="w-full py-4 bg-blue-700 text-white font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl shadow-2xl shadow-blue-900/40 border border-blue-400/20"
+                    >
+                        Commit Check-In
+                    </motion.button>
+                )}
             </form>
+            <HandshakeModal isOpen={isHandshakeOpen} onClose={() => setIsHandshakeOpen(false)} />
+
         </motion.div>
     );
 }

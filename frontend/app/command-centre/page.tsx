@@ -18,7 +18,8 @@ import {
     Ambulance,
     TrendingUp,
     TrendingDown,
-    RefreshCw
+    RefreshCw,
+    ArrowUpRight
 } from 'lucide-react';
 
 interface Hospital {
@@ -55,7 +56,7 @@ const CommandCentrePage = () => {
     const [isMatching, setIsMatching] = useState(false);
     const [matchQuery, setMatchQuery] = useState('');
     const [isRefreshing, setIsRefreshing] = useState(false);
-    
+
     // FIX: State for hydration-safe time
     const [currentTime, setCurrentTime] = useState<string>("");
 
@@ -144,7 +145,7 @@ const CommandCentrePage = () => {
                 </div>
 
                 <div className="flex items-center gap-6">
-                    <button 
+                    <button
                         onClick={fetchData}
                         className="p-2 hover:bg-white/5 rounded-full transition-colors text-slate-500 group"
                     >
@@ -248,8 +249,8 @@ const CommandCentrePage = () => {
                                     {h.status === 'DIVERSION' && (
                                         <div className="mt-4 pt-4 border-t border-rose-500/20 flex items-center justify-between">
                                             <div className="flex items-center gap-2 text-rose-500">
-                                                <Ambulance size={12} className="animate-bounce text-rose-500" />
-                                                <span className="text-[9px] font-black uppercase tracking-widest">Rerouting Active</span>
+                                                <ArrowUpRight size={16} className="animate-pulse text-rose-500" />
+                                                <span className="text-[9px] font-black uppercase tracking-widest">Redirecting</span>
                                             </div>
                                             <div className="flex items-center gap-1 text-slate-400 text-[9px] font-black uppercase">
                                                 Search Next Stable <ChevronRight size={10} />
