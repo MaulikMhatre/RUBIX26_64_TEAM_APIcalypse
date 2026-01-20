@@ -8,6 +8,7 @@ class BedModel(Base):
     
     id = Column(String, primary_key=True, index=True) #  ICU-1
     type = Column(String)                             # ICU or ER
+    unit = Column(String, nullable=True)              # Specific unit name (e.g., Medical Ward, Pediatric)
     is_occupied = Column(Boolean, default=False)
     status = Column(String, default="AVAILABLE")      # AVAILABLE, OCCUPIED, DIRTY, CLEANING
     
@@ -203,4 +204,15 @@ class DoctorRoom(Base):
     id = Column(String, primary_key=True, index=True) # Room 1, Room 2
     doctor_name = Column(String)
     status = Column(String, default="IDLE") # IDLE, ACTIVE
+    # Add this line:
     current_patient_id = Column(String, nullable=True)
+
+class PartnerHospital(Base):
+    __tablename__ = "partner_hospitals"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True)
+    api_endpoint = Column(String) # e.g., "http://mercy-general.com/api/status"
+    distance_miles = Column(Float)
+    api_key = Column(String, nullable=True) # If we need auth to access them
+    specialty_resources = Column(JSON, nullable=True) # {"ventilators": 10, "icu_beds": 5, "cardiologists": 2}

@@ -8,12 +8,12 @@ from dotenv import load_dotenv
 load_dotenv() # Load environment variables from .env file
 
 from datetime import timedelta
-from datetime import datetime
+from datetime import datetime,timezone
 from typing import List, Optional
 from datetime import datetime, date
 from sqlalchemy import func
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -65,19 +65,43 @@ def seed_doctor_rooms():
     ]
     for r_id, name in rooms:
         if not db.query(models.DoctorRoom).filter_by(id=r_id).first():
-            db.add(models.DoctorRoom(id=r_id, doctor_name=name, status="IDLE"))
+            # Added current_patient_id=None
+            db.add(models.DoctorRoom(
+                id=r_id, 
+                doctor_name=name, 
+                status="IDLE", 
+                current_patient_id=None
+            ))
+    db.commit()
+
+def seed_partner_hospitals():
+    db = next(get_db())
+    # Extended mock data for Command Centre
+    hospitals = [
+        # ("Phrelis Core", "http://localhost:8000/api/public/status", 0.0, {"ventilators": 15, "icu_beds": 20, "on_call": ["Cardiology", "Neurology"]}),
+        # ("Mercy General", "https://api.mercy-general.com/v1/status", 5.2, {"ventilators": 8, "icu_beds": 10, "on_call": ["Trauma", "Pediatrics"]}),
+        # ("St. Lukes Hospital", "https://api.stlukes.org/api/status", 8.7, {"ventilators": 5, "icu_beds": 4, "on_call": ["Cardiology", "Orthopedics"]}),
+        ("City Central Medical", "https://api.citycentral.med/public/capacity", 12.4, {"ventilators": 20, "icu_beds": 25, "on_call": ["Neurology", "Infectious Disease"]}),
+        ("Green Valley Health", "https://gvhealth.io/api/status", 15.1, {"ventilators": 4, "icu_beds": 6, "on_call": ["General Surgery"]})
+    ]
+    for name, endpoint, dist, resources in hospitals:
+        existing = db.query(models.PartnerHospital).filter_by(name=name).first()
+        if not existing:
+            db.add(models.PartnerHospital(name=name, api_endpoint=endpoint, distance_miles=dist, specialty_resources=resources))
+        else:
+            existing.specialty_resources = resources
     db.commit()
 
 seed_inventory()
 seed_doctor_rooms()
+seed_partner_hospitals()
 
 app = FastAPI(title="PHRELIS Hospital OS")
 
 
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=["http://localhost:3000"],
-    allow_origins=["*"],
+    allow_origins=["*"], # Temporarily allow everything to rule out CORS
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -595,6 +619,8 @@ async def cleaning_complete(bed_id: str, db: Session = Depends(get_db)):
     })
     return {"status": "success"}
 
+
+
 # --- Surgery Unit Logic ---
 @app.post("/api/surgery/start")
 async def start_surgery(request: SurgeryStartRequest, db: Session = Depends(get_db)):
@@ -1037,63 +1063,167 @@ def search_icd_codes(query: str):
 
 
 
+
+# def calculate_priority_index(patient: models.PatientQueue):
+#     """
+#     ESI Score: (6 - baseAcuity) * 20 points.
+#     Symptom Weights: Bonus points for 'Chest Pain' (+25), 'Shortness of Breath' (+20), 'Fever' (+10).
+#     Wait-Time Compensation: +1 point for every 2 minutes spent in the queue.
+#     """
+#     score = (6 - patient.base_acuity) * 20
+    
+#     # Symptom Bonuses
+#     symptoms_lower = [s.lower() for s in (patient.symptoms or [])]
+#     if any("chest pain" in s for s in symptoms_lower): score += 25
+#     if any("shortness of breath" in s or "sob" in s for s in symptoms_lower): score += 20
+#     if any("fever" in s for s in symptoms_lower): score += 10
+    
+#     # Wait Time Compensation
+#     wait_time_mins = (datetime.utcnow() - patient.check_in_time).total_seconds() / 60
+#     score += (wait_time_mins // 2)
+    
+#     return float(score)
+
+# @app.post("/api/queue/checkin")
+# async def queue_checkin(request: QueueCheckInRequest, db: Session = Depends(get_db)):
+#     new_id = str(uuid.uuid4())
+#     patient = models.PatientQueue(
+#         id=new_id,
+#         patient_name=request.patient_name,
+#         patient_age=request.patient_age,
+#         gender=request.gender,
+#         base_acuity=request.base_acuity,
+#         vitals=request.vitals,
+#         symptoms=request.symptoms,
+#         check_in_time=datetime.utcnow(),
+#         status="WAITING"
+#     )
+#     db.add(patient)
+#     db.commit()
+#     db.refresh(patient)
+    
+#     # Calculate initial score
+#     patient.priority_score = calculate_priority_index(patient)
+#     db.commit()
+    
+#     await manager.broadcast({"type": "QUEUE_UPDATE"})
+#     return {"status": "success", "patient_id": new_id}
+
+# @app.get("/api/queue/sorted")
+# def get_sorted_queue(db: Session = Depends(get_db)):
+#     patients = db.query(models.PatientQueue).filter(models.PatientQueue.status == "WAITING").all()
+    
+#     # Recalculate scores on the fly for real-time wait-time compensation
+#     for p in patients:
+#         p.priority_score = calculate_priority_index(p)
+    
+#     db.commit() # Save updated scores
+    
+#     # Re-fetch sorted (or just sort in memory)
+#     sorted_patients = sorted(patients, key=lambda x: x.priority_score, reverse=True)
+    
+#     # Add Surge Warning logic
+#     avg_score = sum(p.priority_score for p in sorted_patients) / len(sorted_patients) if sorted_patients else 0
+#     surge_warning = avg_score > 100 # Example threshold
+
+#     return {
+#         "patients": sorted_patients,
+#         "surge_warning": surge_warning,
+#         "average_score": avg_score
+#     }
+
 @app.get("/api/queue/rooms")
 def get_doctor_rooms(db: Session = Depends(get_db)):
     return db.query(models.DoctorRoom).all()
 
 @app.post("/api/queue/call/{patient_id}")
-async def call_to_room(patient_id: str, room_id: str, db: Session = Depends(get_db)):
+async def call_to_room(
+    patient_id: str, 
+    room_id: str = Query(...), # Explicitly tell FastAPI this is a query param (?room_id=...)
+    db: Session = Depends(get_db)
+):
     patient = db.query(models.PatientQueue).filter(models.PatientQueue.id == patient_id).first()
     room = db.query(models.DoctorRoom).filter(models.DoctorRoom.id == room_id).first()
     
     if not patient or not room:
-        raise HTTPException(404, "Patient or Room not found")
+        raise HTTPException(status_code=404, detail="Patient or Room not found")
         
     if room.status == "ACTIVE":
-        raise HTTPException(400, "Room is already active")
+        raise HTTPException(status_code=400, detail="Room is already active")
 
-    # Update Patient Status
+    # 1. Update Patient Status
     patient.status = "CONSULTATION"
-    patient.assigned_room = room_id
+    # Ensure your PatientQueue model has 'assigned_room' column
+    if hasattr(patient, 'assigned_room'):
+        patient.assigned_room = room_id
     
-    # Update Room Status
+    # 2. Update Room Status (Linking the patient to the room)
     room.status = "ACTIVE"
     room.current_patient_id = patient_id
     
     db.commit()
     
-    # Trigger Inventory Hook for OPD Consumables
-    await InventoryService.process_usage(
-        db, manager, "OPD_Consultation", 
-        {"patient_name": patient.patient_name, "id": patient.id, "condition": "OPD Consult"}
-    )
+    # 3. Trigger Inventory Hook
+    # Safety check for patient name field (standardizing names)
+    p_name = getattr(patient, "patient_name", "Unknown Patient")
     
+    try:
+        await InventoryService.process_usage(
+            db, manager, "OPD_Consultation", 
+            {"patient_name": p_name, "id": patient.id, "condition": "OPD Consult"}
+        )
+    except Exception as e:
+        print(f"Inventory hook failed but continuing: {e}")
+    
+    # 4. Global Broadcasts
     await manager.broadcast({"type": "QUEUE_UPDATE"})
     await manager.broadcast({"type": "ROOM_UPDATE", "room_id": room_id, "status": "ACTIVE"})
     
-    return {"status": "called"}
+    return {"status": "called", "room_id": room_id, "patient_id": patient_id}
 
 @app.post("/api/queue/complete/{room_id}")
 async def complete_consultation(room_id: str, db: Session = Depends(get_db)):
+    # 1. Fetch the room
     room = db.query(models.DoctorRoom).filter(models.DoctorRoom.id == room_id).first()
-    if not room or room.status == "IDLE":
-        raise HTTPException(400, "Invalid room or room already idle")
-        
-    patient_id = room.current_patient_id
-    patient = db.query(models.PatientQueue).filter(models.PatientQueue.id == patient_id).first()
     
-    if patient:
-        patient.status = "COMPLETED"
+    if not room:
+        raise HTTPException(status_code=404, detail="Room configuration not found")
         
+    if room.status == "IDLE":
+        return {"status": "already_idle", "message": "Room is not currently occupied"}
+
+    # 2. Identify and update the patient
+    # We use getattr as a safety measure while you transition your DB schema
+    patient_id = getattr(room, "current_patient_id", None)
+    
+    if patient_id:
+        patient = db.query(models.PatientQueue).filter(models.PatientQueue.id == patient_id).first()
+        if patient:
+            patient.status = "COMPLETED"
+            # Logic: If you want to free up a bed in the ward automatically, add it here.
+
+    # 3. Reset the room status
     room.status = "IDLE"
-    room.current_patient_id = None
+    if hasattr(room, "current_patient_id"):
+        room.current_patient_id = None
     
-    db.commit()
-    
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Database Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update database")
+
+    # 4. Real-time Broadcast to Frontend
+    # This triggers the 'mutateQueue' and 'mutateRooms' in your Next.js page
     await manager.broadcast({"type": "QUEUE_UPDATE"})
-    await manager.broadcast({"type": "ROOM_UPDATE", "room_id": room_id, "status": "IDLE"})
+    await manager.broadcast({
+        "type": "ROOM_UPDATE", 
+        "room_id": room_id, 
+        "status": "IDLE"
+    })
     
-    return {"status": "completed"}
+    return {"status": "completed", "room_id": room_id}
 
 @app.get("/api/external/capacity")
 def get_external_capacity(db: Session = Depends(get_db)):
@@ -1640,6 +1770,162 @@ def get_active_alerts(db: Session = Depends(get_db)):
         })
         
     return {"alerts": alerts}
+
+# --- Inter-Hospital Capacity & Diversion ---
+
+@app.get("/api/public/status")
+async def get_public_status(db: Session = Depends(get_db)):
+    """
+    Returns anonymized counts and load index.
+    Load Index: 0.0 (Empty) to 1.0 (Full)
+    """
+    total_beds = db.query(models.BedModel).count()
+    occupied_beds = db.query(models.BedModel).filter(models.BedModel.is_occupied == True).count()
+    
+    available = total_beds - occupied_beds
+    load_index = occupied_beds / total_beds if total_beds > 0 else 0.0
+    
+    return {
+        "hospital_name": "Phrelis ERP Core",
+        "total_beds": total_beds,
+        "occupied": occupied_beds,
+        "available": available,
+        "load_index": round(load_index, 2),
+        "status": "CRITICAL" if load_index >= 1.0 else "NORMAL"
+    }
+
+@app.get("/api/diversion/recommend")
+async def get_diversion_recommendation(db: Session = Depends(get_db)):
+    # 1. Check local capacity
+    total_beds = db.query(models.BedModel).count()
+    occupied_beds = db.query(models.BedModel).filter(models.BedModel.is_occupied == True).count()
+    
+    if occupied_beds < total_beds:
+        return {"recommendation": None, "reason": "Capacity available locally"}
+
+    # 2. Fetch Partner data (Mocking the external API calls for this demo)
+    partners = db.query(models.PartnerHospital).all()
+    recommendations = []
+    
+    import random # For simulating live partner data
+    
+    for partner in partners:
+        # In a real scenario, use httpx.get(partner.api_endpoint)
+        # Here we mock live capacity for the demonstration
+        mock_available = random.randint(0, 15)
+        mock_load = 1.0 - (mock_available / 50.0) # Assume 50 total beds
+        
+        if mock_available > 0:
+            # Simple heuristic: Score = Distance + (1 / Available Beds) * 10
+            # Lower score is better
+            score = partner.distance_miles + (1.0 / mock_available) * 10
+            recommendations.append({
+                "hospital": partner.name,
+                "distance": partner.distance_miles,
+                "available_beds": mock_available,
+                "load_index": round(mock_load, 2),
+                "eta_minutes": int(partner.distance_miles * 2.5), # Rough estimate
+                "score": score
+            })
+    
+    if not recommendations:
+        return {"recommendation": None, "reason": "No partner capacity found"}
+        
+    # Sort by score (lowest first)
+    recommendations.sort(key=lambda x: x["score"])
+    
+    return {
+        "recommendation": recommendations[0],
+        "alternatives": recommendations[1:3]
+    }
+
+# --- Command Centre Dashboard Endpoints ---
+
+@app.get("/api/command-centre/status")
+async def get_command_centre_status(db: Session = Depends(get_db)):
+    """Aggregates real-time status from all hospitals"""
+    partners = db.query(models.PartnerHospital).all()
+    results = []
+    
+    import random # Simulating real-time data for partners
+    
+    for p in partners:
+        # Mocking live data for each hospital node
+        total = random.randint(50, 200)
+        occ = random.randint(40, total)
+        load = occ / total
+        
+        results.append({
+            "id": p.id,
+            "name": p.name,
+            "load_index": round(load, 2),
+            "total_beds": total,
+            "occupied": occ,
+            "available": total - occ,
+            "status": "DIVERSION" if load >= 1.0 else "STABLE" if load < 0.7 else "WARNING",
+            "distance": p.distance_miles,
+            "resources": p.specialty_resources
+        })
+    
+    return results
+
+@app.get("/api/command-centre/syndrome-stats")
+async def get_syndrome_stats(db: Session = Depends(get_db)):
+    """Returns anonymized syndrome patterns for heatmap spikes"""
+    categories = ["Respiratory", "Fever/Viral", "Gastro", "Neurological"]
+    stats = []
+    
+    import random
+    for cat in categories:
+        # Mocking 24h trend
+        current_count = random.randint(50, 150)
+        prev_count = random.randint(40, 100)
+        spike = ((current_count - prev_count) / prev_count) * 100
+        
+        stats.append({
+            "category": cat,
+            "current_24h": current_count,
+            "previous_24h": prev_count,
+            "spike_percentage": round(spike, 1),
+            "is_alert": spike > 20.0
+        })
+    
+    return stats
+
+@app.get("/api/command-centre/match")
+async def match_specialty_resource(resource: str, db: Session = Depends(get_db)):
+    """Finds best match hospital for a specific resource or specialty"""
+    partners = db.query(models.PartnerHospital).all()
+    matches = []
+    
+    res_lower = resource.lower()
+    
+    for p in partners:
+        resources = p.specialty_resources or {}
+        on_call = resources.get("on_call", [])
+        
+        score = 0
+        if res_lower in [v.lower() for v in on_call]:
+            score += 50
+        
+        if res_lower == "ventilator" and resources.get("ventilators", 0) > 0:
+            score += 30
+            
+        if res_lower == "icu" and resources.get("icu_beds", 0) > 0:
+            score += 30
+            
+        if score > 0:
+            # Factor in distance (closer is better)
+            final_score = score - (p.distance_miles * 2)
+            matches.append({
+                "hospital": p.name,
+                "score": final_score,
+                "distance": p.distance_miles,
+                "available_resource": resource
+            })
+            
+    matches.sort(key=lambda x: x["score"], reverse=True)
+    return matches
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
