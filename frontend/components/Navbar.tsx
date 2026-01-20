@@ -30,6 +30,7 @@ const Navbar = () => {
   const navItems = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Analytics', href: '/predictions', icon: LineChart },
+    { name: 'OPD', href: '/queue', icon: Stethoscope },
     { name: 'Triage', href: '/triage', icon: Stethoscope },
     { name: 'Admin', href: '/admin', icon: Settings },
     { name: 'History', href: '/history', icon: Clock },

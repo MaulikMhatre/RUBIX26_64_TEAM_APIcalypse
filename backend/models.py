@@ -28,7 +28,6 @@ class BedModel(Base):
     expected_end_time = Column(DateTime, nullable=True)
     cleanup_start_time = Column(DateTime, nullable=True)
     next_surgery_start_time = Column(DateTime, nullable=True)
-    
 
     def get_color_code(self):
         if self.status == "AVAILABLE": return "#32CD32" # Green
@@ -179,3 +178,26 @@ class InventoryLog(Base):
     quantity_used = Column(Integer)
     reason = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+class PatientQueue(Base):
+    __tablename__ = "patient_queue"
+    
+    id = Column(String, primary_key=True, index=True)
+    patient_name = Column(String)
+    patient_age = Column(Integer)
+    gender = Column(String)
+    base_acuity = Column(Integer) # 1-5 (ESI)
+    vitals = Column(JSON) # {hr, bp, spo2}
+    symptoms = Column(JSON) # List of strings
+    check_in_time = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, default="WAITING") # WAITING, CONSULTATION, COMPLETED
+    priority_score = Column(Float, default=0.0)
+    assigned_room = Column(String, nullable=True)
+
+class DoctorRoom(Base):
+    __tablename__ = "doctor_rooms"
+    
+    id = Column(String, primary_key=True, index=True) # Room 1, Room 2
+    doctor_name = Column(String)
+    status = Column(String, default="IDLE") # IDLE, ACTIVE
+    current_patient_id = Column(String, nullable=True)
