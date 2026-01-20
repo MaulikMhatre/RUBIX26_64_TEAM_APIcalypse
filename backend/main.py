@@ -595,8 +595,6 @@ async def cleaning_complete(bed_id: str, db: Session = Depends(get_db)):
     })
     return {"status": "success"}
 
-
-
 # --- Surgery Unit Logic ---
 @app.post("/api/surgery/start")
 async def start_surgery(request: SurgeryStartRequest, db: Session = Depends(get_db)):
@@ -604,18 +602,21 @@ async def start_surgery(request: SurgeryStartRequest, db: Session = Depends(get_
     if not bed:
         raise HTTPException(status_code=404, detail="Bed not found")
     
-    # REQUIREMENT: Start Clock Logic
-    now = datetime.utcnow() 
+    now = datetime.now(timezone.utc)
     
-    # REQUIREMENT: Save Identity Data
     bed.patient_name = request.patient_name
     bed.surgeon_name = request.surgeon_name
     bed.patient_age = request.patient_age
-    
-    # Critical: This starts the duration timer
     bed.admission_time = now
     
-    bed.expected_end_time = now + timedelta(minutes=request.duration_minutes)
+    # Logic Fix: Handle the 0 duration case cleanly
+    iso_time = None
+    if request.duration_minutes > 0:
+        bed.expected_end_time = now + timedelta(minutes=request.duration_minutes)
+        iso_time = bed.expected_end_time.isoformat().replace("+00:00", "Z")
+    else:
+        bed.expected_end_time = None
+    
     bed.current_state = "OCCUPIED"
     bed.status = "OCCUPIED"
     bed.is_occupied = True
@@ -623,7 +624,7 @@ async def start_surgery(request: SurgeryStartRequest, db: Session = Depends(get_
     db.commit()
     db.refresh(bed)
 
-    iso_time = bed.expected_end_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + "Z"
+    # REMOVED the duplicate iso_time assignment that was causing the crash
 
     await manager.broadcast({
         "type": "SURGERY_UPDATE",
@@ -641,26 +642,30 @@ async def start_surgery(request: SurgeryStartRequest, db: Session = Depends(get_
 
     return {"status": "started", "end_time": iso_time}
 
+from datetime import datetime, timezone, timedelta
+
 @app.post("/api/surgery/extend/{bed_id}")
 async def extend_surgery(bed_id: str, request: SurgeryExtendRequest, db: Session = Depends(get_db)):
     bed = db.query(models.BedModel).filter(models.BedModel.id == bed_id).first()
     if not bed: raise HTTPException(404, "Bed not found")
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
-    # Logic: Extend the expected end time
+    if bed.expected_end_time and bed.expected_end_time.tzinfo is None:
+        bed.expected_end_time = bed.expected_end_time.replace(tzinfo=timezone.utc)
+
     if not bed.expected_end_time or bed.expected_end_time < now:
         bed.expected_end_time = now + timedelta(minutes=request.additional_minutes)
     else:
-        bed.expected_end_time = bed.expected_end_time + timedelta(minutes=request.additional_minutes)
+        bed.expected_end_time += timedelta(minutes=request.additional_minutes)
     
     bed.current_state = "OCCUPIED"
     bed.status = "OCCUPIED"
-
     db.commit()
     db.refresh(bed)
 
-    iso_time = bed.expected_end_time.isoformat() + "Z"
+    # FIX: Use replace to ensure a clean 'Z' for the frontend
+    iso_time = bed.expected_end_time.isoformat().replace("+00:00", "Z")
 
     await manager.broadcast({
         "type": "SURGERY_EXTENDED",
@@ -668,59 +673,62 @@ async def extend_surgery(bed_id: str, request: SurgeryExtendRequest, db: Session
         "state": "OCCUPIED",
         "expected_end_time": iso_time
     })
-    
     return {"status": "extended", "new_end_time": iso_time}
+
 
 
 @app.post("/api/surgery/complete/{bed_id}")
 async def complete_surgery(bed_id: str, db: Session = Depends(get_db)):
     bed = db.query(models.BedModel).filter(models.BedModel.id == bed_id).first()
-    if not bed: 
-        raise HTTPException(404, "Bed not found")
+    if not bed: raise HTTPException(404, "Bed not found")
     
-    actual_end_time = datetime.utcnow()
+    actual_end_time = datetime.now(timezone.utc)
+    start_time = bed.admission_time
+    if start_time and start_time.tzinfo is None:
+        start_time = start_time.replace(tzinfo=timezone.utc)
     
-    # REQUIREMENT: Calculate Duration based on admission_time
-    start_time = bed.admission_time if bed.admission_time else actual_end_time
+    if not start_time:
+        start_time = actual_end_time
+
+    # Calculate metrics for history
     total_duration = (actual_end_time - start_time).total_seconds() / 60
-    
     overtime = 0
-    if bed.expected_end_time and actual_end_time > bed.expected_end_time:
-        overtime = (actual_end_time - bed.expected_end_time).total_seconds() / 60
-        
-    # REQUIREMENT: Create History Entry with Identity Data
+    if bed.expected_end_time:
+        expected = bed.expected_end_time
+        if expected.tzinfo is None: expected = expected.replace(tzinfo=timezone.utc)
+        if actual_end_time > expected:
+            overtime = (actual_end_time - expected).total_seconds() / 60
+            
     history_entry = models.SurgeryHistory(
         room_id=bed.id,
         patient_name=bed.patient_name or "Unknown Patient",
-        patient_age=bed.patient_age,     # REQUIREMENT: Save Age
-        surgeon_name=bed.surgeon_name or "Unknown Surgeon", # REQUIREMENT: Save Surgeon
+        patient_age=bed.patient_age,
+        surgeon_name=bed.surgeon_name or "Unknown Surgeon",
         start_time=start_time,
         end_time=actual_end_time,
         total_duration_minutes=int(total_duration),
         overtime_minutes=int(overtime) if overtime > 0 else 0
     )
     
-    # REQUIREMENT: Validation of DB Commit
-    try:
-        db.add(history_entry)
-        db.commit()
-    except Exception as e:
-        print(f"FAILED TO SAVE HISTORY: {e}")
-        db.rollback() 
-        # Continue with room release even if history fails, but log it.
-
-    # Transition to DIRTY for cleaning
+    db.add(history_entry)
+    
     bed.current_state = "DIRTY"
     bed.status = "DIRTY"
-    
+    bed.admission_time = None 
+    bed.expected_end_time = None 
+    # Optional: Clear these if you want the "Dirty" card to be anonymous
+   
     db.commit()
     
     await manager.broadcast({
-        "type": "SURGERY_UPDATE",
-        "bed_id": bed.id,
-        "state": "DIRTY"
+        "type": "SURGERY_UPDATE", 
+        "bed_id": bed.id, 
+        "state": "DIRTY",
+        "patient_name": bed.patient_name,
+        "surgeon_name": bed.surgeon_name,
+        "expected_end_time": None
     })
-    return {"status": "completed_turnover_pending"}
+    return {"status": "completed"}
 
 @app.post("/api/surgery/release/{bed_id}")
 async def release_surgery_room(bed_id: str, db: Session = Depends(get_db)):

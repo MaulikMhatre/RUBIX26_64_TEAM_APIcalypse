@@ -15,8 +15,19 @@ import { useToast } from '@/context/ToastContext';
 
 // --- HELPERS ---
 const formatIST = (isoString?: string) => {
-  const date = isoString ? new Date(isoString) : new Date();
-  return date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+  if (!isoString) return "--:--";
+  
+  const date = new Date(isoString);
+  
+  // If the date is invalid (NaN), return a fallback
+  if (isNaN(date.getTime())) return "Invalid Time";
+
+  return date.toLocaleTimeString('en-IN', { 
+    timeZone: 'Asia/Kolkata', 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: true 
+  });
 };
 
 const getWardZone = (bedId: string): 'Medical' | 'Specialty' | 'Recovery' | 'Security' => {
@@ -221,7 +232,7 @@ const AdminPanel = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBed, setSelectedBed] = useState<any | null>(null);
-  const [patientData, setPatientData] = useState({ name: '', age: '', gender: 'Male', condition: 'Stable', surgeonName: '', duration: 60 });
+  const [patientData, setPatientData] = useState({ name: '', age: '', gender: 'Male', condition: 'Stable', surgeonName: '', duration: 0 });
 
   const [dispatchForm, setDispatchForm] = useState({ severity: 'HIGH', location: '', eta: 10 });
   const [dischargeBedId, setDischargeBedId] = useState<string | null>(null);
@@ -276,7 +287,7 @@ const AdminPanel = () => {
   const openAdmitModal = (bed: any) => {
     setSelectedBed(bed);
     let defCond = activeUnit === 'ICU' ? 'Critical' : activeUnit === 'Surgery' ? 'Pre-Surgery' : 'Stable';
-    setPatientData({ name: '', age: '', gender: 'Male', condition: defCond, surgeonName: '', duration: 60 });
+    setPatientData({ name: '', age: '', gender: 'Male', condition: defCond, surgeonName: '', duration: 0 });
     setIsModalOpen(true);
   };
 

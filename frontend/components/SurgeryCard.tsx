@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Clock,
@@ -9,7 +9,8 @@ import {
     AlertTriangle,
     CheckCircle,
     Trash2,
-    RefreshCw
+    RefreshCw,
+    Plus
 } from "lucide-react";
 import { endpoints } from "@/utils/api";
 
@@ -19,8 +20,9 @@ interface SurgeryRoom {
     current_state: "AVAILABLE" | "OCCUPIED" | "OVERTIME" | "DIRTY" | "CLEANING";
     patient_name?: string;
     surgeon_name?: string;
-    expected_end_time?: string; // ISO string
+    expected_end_time?: string;
     is_occupied: boolean;
+    admission_time?: string;
 }
 
 interface SurgeryCardProps {
@@ -29,19 +31,70 @@ interface SurgeryCardProps {
     onAdmit: () => void;
 }
 
+// --- High Performance Timer Sub-Component ---
+const SurgeryTimer = ({ 
+    expectedEndTime, 
+    onOvertime 
+}: { 
+    expectedEndTime: string; 
+    onOvertime: (val: boolean) => void 
+}) => {
+    const [timeLeft, setTimeLeft] = useState("--:--");
+
+    useEffect(() => {
+        const calculateTime = () => {
+            // Ensure UTC parsing by appending 'Z' if missing
+            const utcString = expectedEndTime.endsWith('Z') ? expectedEndTime : `${expectedEndTime}Z`;
+            const end = new Date(utcString).getTime();
+            const now = new Date().getTime();
+            const diff = end - now;
+
+            if (diff <= 0) {
+                setTimeLeft("00:00");
+                onOvertime(true);
+            } else {
+                const totalSecs = Math.floor(diff / 1000);
+                const mins = Math.floor(totalSecs / 60);
+                const secs = totalSecs % 60;
+                setTimeLeft(`${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`);
+                onOvertime(false);
+            }
+        };
+
+        calculateTime();
+        const interval = setInterval(calculateTime, 1000);
+        return () => clearInterval(interval);
+    }, [expectedEndTime, onOvertime]);
+
+    const isTimerRed = timeLeft === "00:00";
+
+    return (
+        <div className={`text-center py-2 bg-black/20 rounded-lg border transition-colors ${isTimerRed ? "border-red-500/40" : "border-blue-500/10"}`}>
+            <div className={`text-2xl font-mono font-bold ${isTimerRed ? "text-red-500" : "text-blue-400"}`}>
+                {timeLeft}
+            </div>
+            <div className={`text-[9px] font-black uppercase tracking-tighter ${isTimerRed ? "text-red-400" : "text-gray-500"}`}>
+                {isTimerRed ? "Time Exceeded" : "Est. Time Remaining"}
+            </div>
+        </div>
+    );
+};
+
+// --- Main SurgeryCard Component ---
 export default function SurgeryCard({ room, onUpdate, onAdmit }: SurgeryCardProps) {
     const [isOvertime, setIsOvertime] = useState(false);
     const [showCheckIn, setShowCheckIn] = useState(false);
     const [processing, setProcessing] = useState(false);
 
-    // FIX 1: Reset overtime status immediately when a room is released to AVAILABLE
+    // Sync state with backend room state
     useEffect(() => {
-        if (room.current_state === "AVAILABLE") {
+        if (room.current_state === "OVERTIME") {
+            setIsOvertime(true);
+        } else if (room.current_state === "AVAILABLE" || room.current_state === "DIRTY") {
             setIsOvertime(false);
         }
     }, [room.current_state]);
 
-    // --- Actions ---
     const handleAction = async (actionType: "extend" | "complete" | "release", body?: any) => {
         setProcessing(true);
         let url = "";
@@ -56,23 +109,22 @@ export default function SurgeryCard({ room, onUpdate, onAdmit }: SurgeryCardProp
                 body: body ? JSON.stringify(body) : undefined,
             });
             if (res.ok) {
-                onUpdate(); // Re-fetch data to sync new expected_end_time
+                onUpdate(); 
                 setShowCheckIn(false);
             }
         } catch (e) {
-            console.error(e);
+            console.error("Action Failed:", e);
         } finally {
             setProcessing(false);
         }
     };
 
-    // --- Visuals ---
     const getStatusColor = () => {
-        if (room.current_state === "AVAILABLE") return "bg-green-500/10 border-green-500/50 hover:bg-green-500/20";
-        if (room.current_state === "OVERTIME" || isOvertime) return "bg-red-500/10 border-red-500 animate-pulse";
-        if (room.current_state === "OCCUPIED") return "bg-blue-600/10 border-blue-500/50";
-        if (room.current_state === "DIRTY") return "bg-orange-500/10 border-orange-500/50";
-        if (room.current_state === "CLEANING") return "bg-sky-400/10 border-sky-400/50";
+        if (room.current_state === "AVAILABLE") return "bg-green-500/5 border-green-500/30 hover:bg-green-500/10";
+        if (isOvertime || room.current_state === "OVERTIME") return "bg-red-500/5 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.1)]";
+        if (room.current_state === "OCCUPIED") return "bg-blue-600/5 border-blue-500/40";
+        if (room.current_state === "DIRTY") return "bg-orange-500/5 border-orange-500/30";
+        if (room.current_state === "CLEANING") return "bg-sky-400/5 border-sky-400/30";
         return "bg-gray-800 border-gray-700";
     };
 
@@ -83,135 +135,83 @@ export default function SurgeryCard({ room, onUpdate, onAdmit }: SurgeryCardProp
         return <Clock className={`w-5 h-5 ${isOvertime ? "text-red-500" : "text-blue-400"}`} />;
     };
 
-    // Sub-component for strict isolation
-    const SurgeryTimer = ({ expectedEndTime, onOvertime }: { expectedEndTime: string, onOvertime: (v: boolean) => void }) => {
-        const [timeLeft, setTimeLeft] = useState("--:--");
-
-        useEffect(() => {
-            const updateTimer = () => {
-                const now = new Date().getTime();
-                // Parse specifically as UTC
-                const end = new Date(expectedEndTime).getTime();
-
-                const diff = end - now;
-
-                if (diff <= 0) {
-                    setTimeLeft("00:00");
-                    onOvertime(true);
-                } else {
-                    const totalSecs = Math.floor(diff / 1000);
-                    const mins = Math.floor(totalSecs / 60);
-                    const secs = totalSecs % 60;
-                    setTimeLeft(`${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`);
-                    onOvertime(false);
-                }
-            };
-
-            updateTimer();
-            const interval = setInterval(updateTimer, 1000);
-            return () => clearInterval(interval);
-        }, [expectedEndTime, onOvertime]);
-
-        // Derive visual state from timeLeft directly or use a prop in future. 
-        // For now, if timeLeft is "00:00", it's overtime (Red), else Blue.
-        const isTimerRed = timeLeft === "00:00";
-
-        return (
-            <div className={`text-center py-2 bg-black/20 rounded-lg ${isTimerRed ? "border border-red-500/30" : ""}`}>
-                <div className={`text-2xl font-mono font-bold ${isTimerRed ? "text-red-500" : "text-blue-400"}`}>
-                    {timeLeft}
-                </div>
-                <div className={`text-xs font-bold uppercase tracking-tighter ${isTimerRed ? "text-red-400" : "text-gray-500"}`}>
-                    {isTimerRed ? "Time Exceeded" : "Remaining Time"}
-                </div>
-            </div>
-        );
-    };
-
-    // FIX 2: STRICT VISUAL GUARD - Only show timer if state is occupied/overtime AND time exists
-    const showTimer = (room.current_state === "OCCUPIED" || room.current_state === "OVERTIME") && !!room.expected_end_time;
+    // Logic: Only show the clock if state is active AND we have an end time
+    const showTimer = (room.current_state === "OCCUPIED" || room.current_state === "OVERTIME") && 
+                      !!room.expected_end_time && 
+                      room.expected_end_time !== room.admission_time;
 
     return (
-        <div className={`relative p-4 rounded-xl border backdrop-blur-sm transition-all duration-300 ${getStatusColor()}`}>
+        <div className={`relative p-5 rounded-2xl border backdrop-blur-md transition-all duration-500 ${getStatusColor()}`}>
             {/* Header */}
-            <div className="flex justify-between items-start mb-3">
+            <div className="flex justify-between items-start mb-4">
                 <div>
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <h3 className="text-xl font-black text-white flex items-center gap-2 tracking-tighter">
                         {room.id}
-                        {(isOvertime || room.current_state === "OVERTIME") && <AlertTriangle className="w-5 h-5 text-red-500 animate-bounce" />}
+                        {isOvertime && <AlertTriangle className="w-4 h-4 text-red-500 animate-bounce" />}
                     </h3>
-                    <span className="text-[10px] uppercase tracking-wider text-gray-400 font-black">
-                        {room.current_state === "OCCUPIED" && isOvertime ? "OVERTIME" : room.current_state}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                        <div className={`w-1.5 h-1.5 rounded-full ${isOvertime ? 'bg-red-500 animate-ping' : 'bg-blue-500'}`} />
+                        <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">
+                            {isOvertime ? "OVERTIME" : room.current_state}
+                        </span>
+                    </div>
                 </div>
                 {getStatusIcon()}
             </div>
 
-            {/* Content */}
-            <div className="space-y-2 mb-4">
+            {/* Content Section */}
+            <div className="space-y-3 mb-5">
                 {showTimer ? (
-                    <SurgeryTimer
-                        expectedEndTime={room.expected_end_time!}
-                        onOvertime={setIsOvertime}
+                    <SurgeryTimer 
+                        expectedEndTime={room.expected_end_time!} 
+                        onOvertime={setIsOvertime} 
                     />
-                ) : (
-                    /* Fallback for Overtime logic when timer isn't calculating */
-                    room.current_state === "OVERTIME" && (
-                        <div className="text-center py-2 bg-black/20 rounded-lg border border-red-500/30">
-                            <div className="text-2xl font-mono font-bold text-red-500">+00:00</div>
-                            <div className="text-xs text-red-400 font-bold uppercase">Time Exceeded</div>
-                        </div>
-                    )
-                )}
+                ) : room.current_state === "OCCUPIED" ? (
+                    <div className="text-center py-4 bg-blue-500/5 rounded-lg border border-dashed border-blue-500/20">
+                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest animate-pulse">
+                            Ready to Start
+                        </p>
+                    </div>
+                ) : null}
 
-                {(room.current_state !== "AVAILABLE") && (
-                    <div className="space-y-1 p-2 bg-white/5 rounded-lg border border-white/5">
-                        <div className="flex items-center gap-2 text-sm text-gray-300">
-                            <User className="w-3.5 h-3.5 text-blue-400" />
-                            <span className="truncate font-semibold">{room.patient_name || "Unknown Patient"}</span>
+                {room.current_state !== "AVAILABLE" && (
+                    <div className={`bg-white/5 rounded-xl p-3 border border-white/5 space-y-2 transition-opacity ${
+                        (room.current_state === "DIRTY" || room.current_state === "CLEANING") ? "opacity-40" : "opacity-100"
+                    }`}>
+                        <div className="flex items-center gap-3">
+                            <User size={14} className="text-blue-400" />
+                            <span className="text-xs font-bold text-gray-200 truncate">{room.patient_name || "Unknown Patient"}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-300">
-                            <Stethoscope className="w-3.5 h-3.5 text-purple-400" />
-                            <span className="truncate">{room.surgeon_name || "No Surgeon"}</span>
+                        <div className="flex items-center gap-3">
+                            <Stethoscope size={14} className="text-purple-400" />
+                            <span className="text-xs text-gray-400 truncate">{room.surgeon_name || "No Surgeon Assigned"}</span>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Action Footer */}
-            <div className="grid grid-cols-1 gap-2">
+            {/* Action Buttons */}
+            <div className="space-y-2">
                 {(room.current_state === "OCCUPIED" || room.current_state === "OVERTIME") && (
                     <>
-                        <div className="grid grid-cols-3 gap-2">
-                            {/* FIX 3: Bind extension buttons to correctly pass additional_minutes */}
-                            <button
-                                disabled={processing}
-                                onClick={() => handleAction("extend", { additional_minutes: 15 })}
-                                className="bg-gray-800 hover:bg-gray-700 text-white text-[10px] py-2 rounded font-bold border border-white/10"
-                            >
-                                +15m
-                            </button>
-                            <button
-                                disabled={processing}
-                                onClick={() => handleAction("extend", { additional_minutes: 30 })}
-                                className="bg-gray-800 hover:bg-gray-700 text-white text-[10px] py-2 rounded font-bold border border-white/10"
-                            >
-                                +30m
-                            </button>
-                            <button
-                                disabled={processing}
-                                onClick={() => handleAction("extend", { additional_minutes: 60 })}
-                                className="bg-gray-800 hover:bg-gray-700 text-white text-[10px] py-2 rounded font-bold border border-white/10"
-                            >
-                                +60m
-                            </button>
+                        <div className="flex gap-1">
+                            {[15, 30, 60].map(mins => (
+                                <button
+                                    key={mins}
+                                    disabled={processing}
+                                    onClick={() => handleAction("extend", { additional_minutes: mins })}
+                                    className="flex-1 bg-white/5 hover:bg-white/10 text-[10px] font-bold py-2 rounded-lg border border-white/5 transition-colors disabled:opacity-50"
+                                >
+                                    +{mins}m
+                                </button>
+                            ))}
                         </div>
                         <button
                             disabled={processing}
                             onClick={() => setShowCheckIn(true)}
-                            className="w-full bg-green-600 hover:bg-green-700 text-white text-xs py-2.5 rounded font-black uppercase tracking-widest transition-all shadow-lg"
+                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase py-3 rounded-xl transition-all tracking-widest shadow-lg shadow-indigo-500/20"
                         >
-                            Complete Surgery
+                            Complete Case
                         </button>
                     </>
                 )}
@@ -220,48 +220,52 @@ export default function SurgeryCard({ room, onUpdate, onAdmit }: SurgeryCardProp
                     <button
                         disabled={processing}
                         onClick={() => handleAction("release")}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-black uppercase tracking-tighter flex items-center justify-center gap-2 transition-all"
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2"
                     >
-                        <CheckCircle className="w-4 h-4" /> Release Room
+                        <RefreshCw size={14} className={room.current_state === "CLEANING" ? "animate-spin" : ""} /> 
+                        Finalize Turnover
                     </button>
                 )}
 
                 {room.current_state === "AVAILABLE" && (
                     <button
                         onClick={onAdmit}
-                        className="w-full py-6 flex flex-col items-center justify-center text-slate-500 hover:text-white hover:bg-white/5 border border-dashed border-white/10 hover:border-blue-500/50 rounded-xl transition-all group"
+                        className="w-full py-8 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-blue-500/50 hover:bg-blue-500/5 transition-all group"
                     >
-                        <div className="p-3 bg-blue-500/10 rounded-full mb-2 group-hover:bg-blue-600 transition-colors">
-                            <User size={20} className="text-blue-400 group-hover:text-white" />
+                        <div className="p-2 bg-white/5 rounded-full group-hover:bg-blue-500/20 transition-colors">
+                            <Plus size={20} className="text-gray-500 group-hover:text-blue-400" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em]">Admit Patient</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 group-hover:text-blue-400">
+                            Admit New Patient
+                        </span>
                     </button>
                 )}
             </div>
 
-            {/* Check-In Modal Overlay */}
+            {/* Modals */}
             <AnimatePresence>
                 {showCheckIn && (
                     <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="absolute inset-0 bg-gray-950/98 backdrop-blur-xl rounded-xl z-20 flex flex-col items-center justify-center p-4 text-center border border-white/10"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="absolute inset-0 z-30 bg-slate-900/98 backdrop-blur-xl rounded-2xl flex flex-col items-center justify-center p-6 text-center border border-white/10"
                     >
-                        <CheckCircle className="w-12 h-12 text-green-500 mb-3" />
-                        <h4 className="text-lg font-black text-white mb-1 uppercase tracking-tight">Surgery Complete?</h4>
-                        <p className="text-xs text-gray-400 mb-6">Confirming room turnover & history logging.</p>
-
-                        <div className="space-y-2 w-full">
-                            <button
-                                disabled={processing}
-                                onClick={() => handleAction("complete")}
-                                className="w-full bg-green-500 hover:bg-green-600 text-white font-black py-3 rounded-lg uppercase text-xs tracking-widest shadow-lg shadow-green-500/20"
+                        <div className="w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
+                            <CheckCircle size={24} className="text-emerald-500" />
+                        </div>
+                        <h4 className="text-white font-black text-sm uppercase tracking-tight mb-1">Confirm Completion?</h4>
+                        <p className="text-[10px] text-slate-400 mb-6">Patient data will be archived and room turnover will begin.</p>
+                        <div className="w-full space-y-2">
+                            <button 
+                                onClick={() => handleAction("complete")} 
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl text-[10px] font-black text-white uppercase tracking-widest transition-colors"
                             >
                                 Confirm & Clean
                             </button>
-                            <button
-                                disabled={processing}
-                                onClick={() => setShowCheckIn(false)}
-                                className="w-full bg-white/5 hover:bg-white/10 text-gray-300 py-3 rounded-lg text-xs font-bold transition-colors"
+                            <button 
+                                onClick={() => setShowCheckIn(false)} 
+                                className="w-full py-2 text-[10px] font-bold text-slate-500 uppercase hover:text-white transition-colors"
                             >
                                 Cancel
                             </button>

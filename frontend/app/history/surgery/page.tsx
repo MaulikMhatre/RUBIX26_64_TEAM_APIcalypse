@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -10,49 +9,51 @@ export default function CombinedHistoryPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
 
-   const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-        const today = new Date().toLocaleDateString('en-CA'); 
-        const endpoint = view === "GENERAL" 
-            ? `/api/history/day/${today}` 
-            : `/api/history/surgery`;
-        
-        const res = await fetch(endpoint);
-        
-        if (!res.ok) {
-            // FIX: Parse the error but don't throw the whole object
-            const errorData = await res.json().catch(() => ({}));
-            const msg = errorData.detail?.[0]?.msg || `Error ${res.status}`;
-            throw new Error(msg); 
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        try {
+            // FIX: Manual ISO date construction to ensure YYYY-MM-DD format regardless of browser locale
+            const now = new Date();
+            const today = now.toISOString().split('T')[0]; 
+            
+            const endpoint = view === "GENERAL" 
+                ? `/api/history/day/${today}` 
+                : `/api/history/surgery`;
+            
+            const res = await fetch(endpoint);
+            
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                const msg = errorData.detail?.[0]?.msg || errorData.detail || `Error ${res.status}`;
+                throw new Error(typeof msg === 'string' ? msg : "API Fetch Failed"); 
+            }
+            
+            const result = await res.json();
+            setData(Array.isArray(result) ? result : []);
+        } catch (e) {
+            console.error("Fetch error:", e instanceof Error ? e.message : String(e));
+            setData([]); 
+        } finally {
+            setLoading(false);
         }
+    }, [view]);
+
+    useEffect(() => {
+        fetchData();
+        const interval = setInterval(fetchData, 30000);
+        return () => clearInterval(interval);
+    }, [fetchData]);
+
+    const filteredData = data.filter((item) => {
+        if (!item || typeof item !== 'object') return false;
         
-        const result = await res.json();
-        setData(Array.isArray(result) ? result : []);
-    } catch (e) {
-        // FIX: Ensure console.error logs a string, not an object
-        console.error("Fetch error:", e instanceof Error ? e.message : String(e));
-        setData([]); 
-    } finally {
-        setLoading(false);
-    }
-}, [view]);
-
-useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-}, [fetchData]);
-
-const filteredData = data.filter((item) => {
-    // FIX: Add safe check to ensure item is an object before filtering
-    if (!item || typeof item !== 'object') return false;
-    
-    const name = item.patient_name?.toLowerCase() || "";
-    const surgeon = item.surgeon_name?.toLowerCase() || "";
-    const search = searchTerm.toLowerCase();
-    return name.includes(search) || surgeon.includes(search);
-});
+        const name = item.patient_name?.toLowerCase() || "";
+        const surgeon = item.surgeon_name?.toLowerCase() || "";
+        const condition = item.condition?.toLowerCase() || "";
+        const search = searchTerm.toLowerCase();
+        
+        return name.includes(search) || surgeon.includes(search) || condition.includes(search);
+    });
 
     return (
         <div className="p-8 bg-slate-950 min-h-screen text-white font-sans">
@@ -63,7 +64,9 @@ const filteredData = data.filter((item) => {
                         <div className={`p-2 rounded-lg ${view === "GENERAL" ? "bg-blue-600/20 text-blue-400" : "bg-purple-600/20 text-purple-400"}`}>
                             {view === "GENERAL" ? <Activity size={24} /> : <Scissors size={24} />}
                         </div>
-                        <h1 className="text-3xl font-black uppercase tracking-tighter">Hospital Archives</h1>
+                        <h1 className="text-3xl font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-500">
+                            Hospital Archives
+                        </h1>
                     </div>
                     <p className="text-slate-400 text-sm">
                         Secure Archival Record System • <span className="text-slate-200">{view === "GENERAL" ? "General Admissions" : "Surgical Records"}</span>
@@ -133,73 +136,79 @@ const filteredData = data.filter((item) => {
                                 </td>
                             </tr>
                         ) : (
-                            filteredData.map((item, idx) => (
-                                <tr key={item.id || idx} className="hover:bg-white/[0.02] transition-colors group">
-                                    <td className="p-5">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-400 group-hover:bg-blue-500/10 transition-colors">
-                                                <User size={20} />
-                                            </div>
-                                            <div>
-                                                <div className="font-bold text-slate-100">{item.patient_name || "Anonymous"}</div>
-                                                <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-                                                    Age: {item.patient_age || "N/A"}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="p-5">
-                                        {view === "GENERAL" ? (
-                                            <div className="text-slate-300 text-sm italic">"{item.condition}"</div>
-                                        ) : (
-                                            <div className="flex flex-col">
-                                                <span className="text-purple-400 font-bold text-sm">{item.surgeon_name}</span>
-                                                <span className="text-[10px] text-slate-500 uppercase tracking-tighter">Attending Surgeon</span>
-                                            </div>
-                                        )}
-                                    </td>
-                                    <td className="p-5">
-                                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-xs text-slate-400 font-mono">
-                                            {view === "GENERAL" ? (item.bed_id || "Unit") : (item.room_id || "OR")}
-                                        </div>
-                                    </td>
-                                    <td className="p-5">
-                                        {view === "GENERAL" ? (
-                                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-tighter uppercase ${
-                                                item.esi_level <= 2 ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                                            }`}>
-                                                ESI Level {item.esi_level}
-                                            </span>
-                                        ) : (
+                            filteredData.map((item, idx) => {
+                                // FIX: Robust timestamp extraction
+                                const rawDate = item.timestamp || item.end_time || item.start_time;
+                                const formattedDate = rawDate ? new Date(rawDate) : new Date();
+
+                                return (
+                                    <tr key={item.id || idx} className="hover:bg-white/[0.02] transition-colors group">
+                                        <td className="p-5">
                                             <div className="flex items-center gap-3">
-                                                <div className="flex flex-col">
-                                                    <span className="text-slate-100 font-bold">{item.total_duration_minutes}m</span>
-                                                    <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Elapsed</span>
+                                                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-400 group-hover:bg-blue-500/10 transition-colors">
+                                                    <User size={20} />
                                                 </div>
-                                                {item.overtime_minutes > 0 ? (
-                                                    <div className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] font-bold">
-                                                        +{item.overtime_minutes}m DELAY
+                                                <div>
+                                                    <div className="font-bold text-slate-100">{item.patient_name || "Anonymous"}</div>
+                                                    <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
+                                                        Age: {item.patient_age || "N/A"}
                                                     </div>
-                                                ) : (
-                                                    <div className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold">
-                                                        ON TIME
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="p-5">
+                                            {view === "GENERAL" ? (
+                                                <div className="text-slate-300 text-sm italic">"{item.condition}"</div>
+                                            ) : (
+                                                <div className="flex flex-col">
+                                                    <span className="text-purple-400 font-bold text-sm">{item.surgeon_name || "Unknown"}</span>
+                                                    <span className="text-[10px] text-slate-500 uppercase tracking-tighter font-semibold">Attending Surgeon</span>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="p-5">
+                                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-xs text-slate-400 font-mono">
+                                                {view === "GENERAL" ? (item.bed_id || "Unit") : (item.room_id || "OR")}
+                                            </div>
+                                        </td>
+                                        <td className="p-5">
+                                            {view === "GENERAL" ? (
+                                                <span className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-tighter uppercase ${
+                                                    item.esi_level <= 2 ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
+                                                }`}>
+                                                    ESI Level {item.esi_level || "N/A"}
+                                                </span>
+                                            ) : (
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-slate-100 font-bold">{item.total_duration_minutes || 0}m</span>
+                                                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Elapsed</span>
                                                     </div>
-                                                )}
+                                                    {item.overtime_minutes > 0 ? (
+                                                        <div className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] font-bold">
+                                                            +{item.overtime_minutes}m DELAY
+                                                        </div>
+                                                    ) : (
+                                                        <div className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+                                                            ON TIME
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="p-5 text-right">
+                                            <div className="flex flex-col items-end">
+                                                <div className="text-slate-300 font-mono text-sm">
+                                                    {formattedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                                                    {formattedDate.toLocaleDateString()}
+                                                </div>
                                             </div>
-                                        )}
-                                    </td>
-                                    <td className="p-5 text-right">
-                                        <div className="flex flex-col items-end">
-                                            <div className="text-slate-300 font-mono text-sm">
-                                                {new Date(item.timestamp || item.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </div>
-                                            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                                                {new Date(item.timestamp || item.end_time).toLocaleDateString()}
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))
+                                        </td>
+                                    </tr>
+                                );
+                            })
                         )}
                     </tbody>
                 </table>
@@ -207,19 +216,3 @@ const filteredData = data.filter((item) => {
         </div>
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
