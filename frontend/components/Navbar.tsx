@@ -25,7 +25,7 @@ const Navbar = () => {
     { name: 'Admin', icon: Settings, href: '/admin' },
     { name: 'History', icon: Clock, href: '/history' },
     { name: 'Staff', icon: Users, href: '/staff' },
-    { name: 'Sentinel', icon: Network, href: '/sentinel' },
+    // { name: 'Sentinel', icon: Network, href: '/sentinel' },
     { name: 'Command', icon: Shield, href: '/command-centre' },
     { name: 'Nursing', icon: ClipboardCheck, href: '/staff/worklist' }
   ];
