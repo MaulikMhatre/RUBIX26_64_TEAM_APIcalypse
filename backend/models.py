@@ -3,6 +3,15 @@ from datetime import datetime
 from database import Base
 
 
+class BedMaster(Base):
+    __tablename__ = "bed_master"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String, unique=True) # ICU, ER, Ward, Deluxe
+    daily_rate = Column(Float)
+    admission_fee = Column(Float, default=0.0) # [NEW] Fixed one-time charge
+
+
 class BedModel(Base):
     __tablename__ = "beds"
     
@@ -67,7 +76,7 @@ class PatientRecord(Base):
     acuity = Column(String)
     gender = Column(String, nullable=True) # M, F, or Other
     symptoms = Column(JSON)
-    timestamp = Column(DateTime, default=datetime.now)
+    timestamp = Column(DateTime, default=datetime.utcnow)
     bed_id = Column(String, ForeignKey("beds.id"), nullable=True)
     # New fields for history integration
     patient_name = Column(String, nullable=True)
@@ -75,6 +84,8 @@ class PatientRecord(Base):
     condition = Column(String, nullable=True)
     discharge_time = Column(DateTime, nullable=True)
     assigned_staff = Column(String, ForeignKey("staff.id"), nullable=True) # Added for Smart Nursing
+    payer_type = Column(String, default="Cash") # Cash, Insurance, Scheme
+    collection_status = Column(String, default="Billed") # Billed, Paid, Pending
 
 class Department(Base):
     __tablename__ = "departments"
@@ -168,6 +179,7 @@ class InventoryItem(Base):
     category = Column(String) 
     quantity = Column(Integer, default=0)
     reorder_level = Column(Integer, default=10)
+    unit_price = Column(Float, default=0.0) # [NEW] Added for billing
 
 class InventoryLog(Base):
     __tablename__ = "inventory_logs"
@@ -216,3 +228,34 @@ class PartnerHospital(Base):
     distance_miles = Column(Float)
     api_key = Column(String, nullable=True) # If we need auth to access them
     specialty_resources = Column(JSON, nullable=True) # {"ventilators": 10, "icu_beds": 5, "cardiologists": 2}
+
+class BillingLedger(Base):
+    __tablename__ = "patient_ledger"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(String, ForeignKey("patients.id"), index=True)
+    item_type = Column(String) # BED, PHARMACY, CLINICAL, LAB
+    description = Column(String)
+    amount = Column(Float)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+class HospitalExpense(Base):
+    __tablename__ = "hospital_expenses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String) # Salary, Utilities, Medical Supplies, Maintenance
+    amount = Column(Float)
+    description = Column(String)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+class FinancialLedger(Base):
+    __tablename__ = "financial_ledger"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_type = Column(String) # DEBIT, CREDIT
+    category = Column(String) # REVENUE, EXPENSE, INVENTORY, SALARY
+    amount = Column(Float)
+    reference_id = Column(String, nullable=True) # patient_id or expense_id
+    description = Column(String)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    immutable_hash = Column(String, nullable=True) # For audit integrity

@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime
 import models
+from billing_utility import BillingListener # [NEW]
 
 class InventoryService:
     @staticmethod
@@ -31,6 +32,18 @@ class InventoryService:
             timestamp=datetime.utcnow()
         )
         db.add(log)
+        
+        # [NEW] Automatic Billing
+        if bed_id:
+            patient = db.query(models.PatientRecord).filter(models.PatientRecord.bed_id == bed_id).first()
+            if patient:
+                BillingListener.log_event(
+                    db, 
+                    patient.id, 
+                    "PHARMACY", 
+                    f"Inventory: {item_name} (x{deducted_qty})", 
+                    item.unit_price * deducted_qty
+                )
         
         is_low_stock = item.quantity < item.reorder_level
         return item, is_low_stock

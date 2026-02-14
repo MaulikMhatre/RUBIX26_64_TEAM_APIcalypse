@@ -13,7 +13,7 @@ from typing import List, Optional
 from datetime import datetime, date
 from sqlalchemy import func
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -30,6 +30,8 @@ from sqlalchemy import desc # For ordering logs
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
+from billing_utility import BillingListener, calculate_accrued_bed_cost # [NEW]
+from finance_service import FinanceService
 
 load_dotenv()
 models.Base.metadata.create_all(bind=engine)
@@ -38,21 +40,24 @@ models.Base.metadata.create_all(bind=engine)
 def seed_inventory():
     db = next(get_db())
     items = [
-        ("Ventilator Circuit", "ICU", 20, 5),
-        ("Sedation Kit", "ICU", 50, 10),
-        ("Trauma IV Kit", "ER", 30, 8),
-        ("Saline Pack", "General", 100, 20),
-        ("OR Prep Kit", "Surgery", 15, 3),
-        ("Sterile Gowns", "Surgery", 200, 25),
-        ("PPE Kit", "General", 100, 15),
-        ("Sanitization Kit", "General", 50, 15), # [NEW]
-        ("Bed Linens", "General", 100, 20),      # [NEW]
-        ("Gloves", "OPD", 500, 50),              # [NEW]
-        ("Tongue Depressor", "OPD", 200, 20)     # [NEW]
+        ("Ventilator Circuit", "ICU", 20, 5, 1200.0),
+        ("Sedation Kit", "ICU", 50, 10, 800.0),
+        ("Trauma IV Kit", "ER", 30, 8, 2500.0),
+        ("Saline Pack", "General", 100, 20, 250.0),
+        ("OR Prep Kit", "Surgery", 15, 3, 5000.0),
+        ("Sterile Gowns", "Surgery", 200, 25, 450.0),
+        ("PPE Kit", "General", 100, 15, 800.0),
+        ("Sanitization Kit", "General", 50, 15, 300.0),
+        ("Bed Linens", "General", 100, 20, 150.0),
+        ("Gloves", "OPD", 500, 50, 20.0),
+        ("Tongue Depressor", "OPD", 200, 20, 10.0)
     ]
-    for name, cat, qty, reorder in items:
-        if not db.query(models.InventoryItem).filter_by(name=name).first():
-            db.add(models.InventoryItem(name=name, category=cat, quantity=qty, reorder_level=reorder))
+    for name, cat, qty, reorder, price in items:
+        item = db.query(models.InventoryItem).filter_by(name=name).first()
+        if not item:
+            db.add(models.InventoryItem(name=name, category=cat, quantity=qty, reorder_level=reorder, unit_price=price))
+        else:
+            item.unit_price = price
     db.commit()
 
 def seed_doctor_rooms():
@@ -92,9 +97,50 @@ def seed_partner_hospitals():
             existing.specialty_resources = resources
     db.commit()
 
+def seed_bed_master():
+    db = next(get_db())
+    categories = [
+        ("ICU", 15000.0, 5000.0),
+        ("ER", 8000.0, 2000.0),
+        ("Ward", 3500.0, 500.0),
+        ("Deluxe", 12000.0, 3000.0)
+    ]
+    for cat, rate, fee in categories:
+        master = db.query(models.BedMaster).filter_by(category=cat).first()
+        if not master:
+            db.add(models.BedMaster(category=cat, daily_rate=rate, admission_fee=fee))
+        else:
+            master.admission_fee = fee
+    db.commit()
+
+def seed_finance_data():
+    db = next(get_db())
+    # 1. Seed Expenses if empty
+    if not db.query(models.HospitalExpense).first():
+        expenses = [
+            ("Salary", 1200000.0, "Monthly Clinical Staff Salaries"),
+            ("Utilities", 150000.0, "Electricity, Water, Oxygen Supply"),
+            ("Medical Supplies", 450000.0, "Consumables and Life Support Kits"),
+            ("Maintenance", 80000.0, "MRI/CT Calibration and Facility Upkeep")
+        ]
+        for cat, amt, desc in expenses:
+            db.add(models.HospitalExpense(category=cat, amount=amt, description=desc))
+        
+    # 2. Update patients with random payer types for diversity
+    import random
+    patients = db.query(models.PatientRecord).all()
+    for p in patients:
+        if not p.payer_type:
+            p.payer_type = random.choice(["Cash", "Insurance", "Government Scheme"])
+            p.collection_status = random.choice(["Paid", "Billed", "Paid", "Paid"]) # Weighted
+            
+    db.commit()
+
 seed_inventory()
 seed_doctor_rooms()
 seed_partner_hospitals()
+seed_bed_master()
+seed_finance_data()
 
 app = FastAPI(title="PHRELIS Hospital OS")
 
@@ -138,7 +184,7 @@ class MedicalAgent:
         
         # Validation for a "Perfect" setup
         if not api_key or api_key == "your_api_key_here":
-            print("❌ CRITICAL ERROR: Google API Key is missing or invalid in .env")
+            print("[X] CRITICAL ERROR: Google API Key is missing or invalid in .env")
             self.active = False
             return
         
@@ -154,9 +200,9 @@ class MedicalAgent:
             # Using Structured Output for Senior Dev accuracy
             self.structured_llm = self.llm.with_structured_output(TriageDecision)
             self.active = True
-            print("✅ Medical AI Agent linked and active.")
+            print("[OK] Medical AI Agent linked and active.")
         except Exception as e:
-            print(f"❌ Initialization Failed: {e}")
+            print(f"[X] Initialization Failed: {e}")
             self.active = False
             
     async def analyze_patient(self, symptoms: List[str], vitals: dict) -> TriageDecision:
@@ -500,6 +546,17 @@ async def admit_patient(request: AdmissionRequest, db: Session = Depends(get_db)
             {"patient_name": request.patient_name, "bed_id": bed.id, "condition": request.condition}
         )
         
+        # 7. ADD ADMISSION FEE (Fixed Charge)
+        master = db.query(models.BedMaster).filter(models.BedMaster.category == bed.type).first()
+        if master and master.admission_fee > 0:
+            BillingListener.log_event(
+                db, 
+                new_patient_id, 
+                "CLINICAL", 
+                f"Admission/Registration Fee ({bed.type})", 
+                master.admission_fee
+            )
+        
         await manager.broadcast({
             "type": "BED_UPDATE", 
             "bed_id": bed.id, 
@@ -507,7 +564,7 @@ async def admit_patient(request: AdmissionRequest, db: Session = Depends(get_db)
             "patient_gender": request.gender
         })
         
-        return {"message": "Admission Successful", "bed_id": bed.id}
+        return {"message": "Admission Successful", "bed_id": bed.id, "patient_id": new_patient_id}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database Sync Failed: {str(e)}")
@@ -1927,17 +1984,122 @@ async def match_specialty_resource(resource: str, db: Session = Depends(get_db))
     matches.sort(key=lambda x: x["score"], reverse=True)
     return matches
 
+
+
+# [NEW] Background Task for stay-duration recalculation
+def recalculate_stay_durations():
+    db = next(get_db())
+    # This task would typically update a cached 'total_accrued' field or log a snapshot
+    print(f"[{datetime.now()}] BACKGROUND TASK: Recalculating stay durations for all active patients...")
+    active_patients = db.query(models.PatientRecord).filter(models.PatientRecord.discharge_time == None).all()
+    for patient in active_patients:
+        # In a production app, we might update a field here. 
+        # For Phrelis, we calculate it dynamically at the API level for zero-hardcode accuracy.
+        pass
+
+@app.on_event("startup")
+async def schedule_tasks():
+    # In a real app, use a scheduler like APScheduler. For now, we define the hook.
+    pass
+
+@app.get("/api/patients/search")
+async def search_patients(q: str, db: Session = Depends(get_db)):
+    results = db.query(models.PatientRecord).filter(
+        (models.PatientRecord.patient_name.ilike(f"%{q}%")) | 
+        (models.PatientRecord.id.ilike(f"%{q}%"))
+    ).all()
+    return results
+
+@app.get("/api/billing/live/{patient_id}")
+async def get_live_billing(patient_id: str, db: Session = Depends(get_db)):
+    # 1. Fetch patient and bed
+    patient = db.query(models.PatientRecord).filter(models.PatientRecord.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    bed = db.query(models.BedModel).filter(models.BedModel.id == patient.bed_id).first()
+    
+    # 2. Calculate dynamic bed cost
+    accrued_bed_cost = 0.0
+    daily_rate = 0.0
+    if bed:
+        master = db.query(models.BedMaster).filter(models.BedMaster.category == bed.type).first()
+        if master:
+            daily_rate = master.daily_rate
+            accrued_bed_cost = calculate_accrued_bed_cost(
+                patient.timestamp, 
+                daily_rate, 
+                end_time=patient.discharge_time
+            )
+            
+    # 3. Sum ledger entries
+    ledger_entries = db.query(models.BillingLedger).filter(models.BillingLedger.patient_id == patient_id).all()
+    resource_total = sum(item.amount for item in ledger_entries)
+    
+    # 4. Apply taxes (18% GST)
+    subtotal = accrued_bed_cost + resource_total
+    tax = subtotal * 0.18
+    grand_total = subtotal + tax
+    
+    return {
+        "patient_id": patient_id,
+        "patient_name": patient.patient_name,
+        "bed_info": {
+            "id": bed.id if bed else None,
+            "category": bed.type if bed else None,
+            "daily_rate": daily_rate,
+            "admission_time": bed.admission_time if bed else None
+        },
+        "costs": {
+            "accrued_bed_cost": accrued_bed_cost,
+            "resource_charges": resource_total,
+            "subtotal": subtotal,
+            "tax": tax,
+            "grand_total": round(grand_total, 2)
+        },
+        "ledger": ledger_entries
+    }
+
+
+
+
+
+
+
+
+# --- Finance Intelligence Endpoints ---
+
+@app.get("/api/finance/stats")
+async def get_finance_stats(db: Session = Depends(get_db)):
+    return FinanceService.get_financial_kpis(db)
+
+@app.get("/api/finance/department-pl")
+async def get_dept_pl(db: Session = Depends(get_db)):
+    return FinanceService.get_departmental_pl(db)
+
+@app.get("/api/finance/leakage")
+async def get_leakage(db: Session = Depends(get_db)):
+    return FinanceService.detect_leakage(db)
+
+@app.get("/api/finance/revenue-history")
+async def get_revenue_history(db: Session = Depends(get_db)):
+    return FinanceService.get_revenue_history(db)
+
+@app.get("/api/finance/payer-mix")
+async def get_payer_mix(db: Session = Depends(get_db)):
+    return FinanceService.get_payer_mix(db)
+
+@app.get("/api/finance/unit-economics")
+async def get_unit_economics(db: Session = Depends(get_db)):
+    return FinanceService.get_unit_economics(db)
+
+@app.get("/api/finance/revenue-velocity")
+async def get_revenue_velocity(db: Session = Depends(get_db)):
+    return FinanceService.get_revenue_velocity(db)
+
+@app.get("/api/finance/timeline/{patient_id}")
+async def get_patient_timeline(patient_id: str, db: Session = Depends(get_db)):
+    return FinanceService.get_patient_timeline(db, patient_id)
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-
-
-
-
-
-
-
-
-
-

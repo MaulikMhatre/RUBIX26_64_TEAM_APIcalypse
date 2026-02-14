@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, Stethoscope, LineChart, Activity, Settings,
-  Clock, Network, Users, ClipboardCheck, LogOut, Shield
+  Clock, Network, Users, ClipboardCheck, LogOut, Shield, DollarSign
 } from 'lucide-react';
 import DiversionBanner from './DiversionBanner';
 
@@ -27,7 +27,9 @@ const Navbar = () => {
     { name: 'Staff', icon: Users, href: '/staff' },
     // { name: 'Sentinel', icon: Network, href: '/sentinel' },
     { name: 'Command', icon: Shield, href: '/command-centre' },
-    { name: 'Nursing', icon: ClipboardCheck, href: '/staff/worklist' }
+    { name: 'Nursing', icon: ClipboardCheck, href: '/staff/worklist' },
+    { name: 'CFO', icon: ClipboardCheck, href: '/cfo' },
+    { name: 'Billing', icon: DollarSign, href: '/billing' }
   ];
 
   return (
@@ -38,7 +40,7 @@ const Navbar = () => {
           <div className="flex items-center justify-between h-full">
 
             {/* BRANDING: Increased spacing & luxury weight */}
-            <div 
+            <div
               className="flex items-center gap-5 pr-10 border-r border-white/[0.08] cursor-pointer group"
               onClick={() => router.push('/dashboard')}
             >
@@ -66,17 +68,15 @@ const Navbar = () => {
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`group relative flex flex-col items-center justify-center px-4 py-2 rounded-xl transition-all duration-500 ${
-                      isActive ? 'text-white' : 'text-slate-500 hover:text-slate-200'
-                    }`}
+                    className={`group relative flex flex-col items-center justify-center px-4 py-2 rounded-xl transition-all duration-500 ${isActive ? 'text-white' : 'text-slate-500 hover:text-slate-200'
+                      }`}
                   >
-                    <item.icon className={`w-4 h-4 mb-1.5 transition-colors duration-500 ${
-                      isActive ? 'text-indigo-400' : 'group-hover:text-indigo-300'
-                    }`} />
+                    <item.icon className={`w-4 h-4 mb-1.5 transition-colors duration-500 ${isActive ? 'text-indigo-400' : 'group-hover:text-indigo-300'
+                      }`} />
                     <span className="text-[9px] font-black uppercase tracking-[0.15em]">
                       {item.name}
                     </span>
-                    
+
                     {isActive && (
                       <motion.div
                         layoutId="active-pill"
